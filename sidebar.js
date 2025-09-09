@@ -279,229 +279,8 @@
     }
   }
 
-  function isElementVisible(element) {
-    const rect = element.getBoundingClientRect();
-    const windowHeight = window.innerHeight || document.documentElement.clientHeight;
-    const windowWidth = window.innerWidth || document.documentElement.clientWidth;
-    
-    // Check if element is at least partially visible
-    // Element is visible if any part of it overlaps with the viewport
-    return (
-      rect.bottom > 0 &&        // Bottom edge is below viewport top
-      rect.right > 0 &&         // Right edge is to the right of viewport left
-      rect.top < windowHeight && // Top edge is above viewport bottom
-      rect.left < windowWidth && // Left edge is to the left of viewport right
-      rect.width > 0 &&
-      rect.height > 0 &&
-      element.offsetWidth > 0 &&
-      element.offsetHeight > 0
-    );
-  }
 
-  function getElementInfo(element) {
-    const rect = element.getBoundingClientRect();
-    const computedStyle = window.getComputedStyle(element);
-    
-    // Get text content - capture everything meaningful
-    let textContent = '';
-    if (element.tagName === 'IMG') {
-      textContent = element.alt || element.title || '';
-    } else if (element.tagName === 'INPUT') {
-      textContent = element.placeholder || element.value || '';
-    } else if (element.tagName === 'TEXTAREA') {
-      textContent = element.placeholder || element.value || '';
-    } else {
-      // Get all text content, but clean it up
-      const fullText = element.textContent?.trim() || '';
-      
-      // For content-heavy elements like articles, paragraphs, get full text
-      const contentTags = ['p', 'article', 'section', 'div', 'span', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6'];
-      if (contentTags.includes(element.tagName.toLowerCase()) && fullText) {
-        textContent = fullText;
-      } else if (fullText) {
-        textContent = fullText;
-      }
-      
-      // Clean up whitespace and line breaks
-      textContent = textContent.replace(/\s+/g, ' ').trim();
-    }
-    
-    // For long text, provide a meaningful excerpt
-    let displayText = textContent;
-    if (textContent.length > 300) {
-      // For article content, show first 300 chars
-      displayText = textContent.substring(0, 300) + '...';
-    }
 
-    // Check for images more thoroughly
-    let hasImage = element.tagName === 'IMG';
-    if (!hasImage) {
-      const bgImage = computedStyle.backgroundImage;
-      hasImage = bgImage && bgImage !== 'none' && !bgImage.includes('data:');
-    }
-    
-    // Look for nested images
-    if (!hasImage && element.querySelector('img')) {
-      hasImage = true;
-    }
-
-    return {
-      tagName: element.tagName.toLowerCase(),
-      id: element.id || null,
-      className: element.className ? element.className.split(' ').slice(0, 2).join(' ') : null,
-      textContent: displayText || null,
-      fullTextLength: textContent ? textContent.length : 0,
-      href: element.href || null,
-      src: element.src || null,
-      type: element.type || null,
-      role: element.getAttribute('role') || null,
-      ariaLabel: element.getAttribute('aria-label') || null,
-      position: {
-        x: Math.round(rect.left),
-        y: Math.round(rect.top),
-        width: Math.round(rect.width),
-        height: Math.round(rect.height)
-      },
-      isInteractive: isInteractiveElement(element),
-      hasText: !!textContent,
-      hasImage: hasImage
-    };
-  }
-
-  function isInteractiveElement(element) {
-    const interactiveTags = ['button', 'input', 'select', 'textarea', 'a', 'details', 'summary'];
-    const interactiveRoles = ['button', 'link', 'menuitem', 'tab', 'checkbox', 'radio'];
-    
-    if (interactiveTags.includes(element.tagName.toLowerCase())) {
-      return true;
-    }
-    
-    if (element.getAttribute('role') && interactiveRoles.includes(element.getAttribute('role'))) {
-      return true;
-    }
-    
-    if (element.onclick || element.getAttribute('onclick')) {
-      return true;
-    }
-    
-    return false;
-  }
-
-  function groupElementsByProximity(elements) {
-    const groups = [];
-    const grouped = new Set();
-    
-    elements.forEach((element, index) => {
-      if (grouped.has(index)) return;
-      
-      const group = [element];
-      grouped.add(index);
-      
-      // Find nearby elements
-      elements.forEach((otherElement, otherIndex) => {
-        if (grouped.has(otherIndex) || index === otherIndex) return;
-        
-        const distance = Math.sqrt(
-          Math.pow(element.position.x - otherElement.position.x, 2) +
-          Math.pow(element.position.y - otherElement.position.y, 2)
-        );
-        
-        // Group elements that are close to each other
-        if (distance < 200) {
-          group.push(otherElement);
-          grouped.add(otherIndex);
-        }
-      });
-      
-      groups.push(group);
-    });
-    
-    return groups;
-  }
-
-  function isImportantUIElement(element, info) {
-    // Interactive elements are always important
-    if (info.isInteractive) return true;
-    
-    // Images are always important
-    if (element.tagName === 'IMG' || info.hasImage) return true;
-    
-    // Any element with meaningful text content
-    if (info.textContent && info.textContent.trim().length >= 3) return true;
-    
-    // Elements with background images
-    if (info.hasImage) return true;
-    
-    return false;
-  }
-
-  function extractPageElements() {
-    const elements = [];
-    const processedElements = new Set();
-    
-    // Get all visible elements
-    const allElements = document.querySelectorAll('*');
-    
-    allElements.forEach(element => {
-      // Skip our sidebar and processed elements
-      if (element.id === 'chat-assistant-sidebar' || 
-          element.closest('#chat-assistant-sidebar') ||
-          processedElements.has(element)) {
-        return;
-      }
-      
-      // Only process visible elements
-      if (!isElementVisible(element)) return;
-      
-      // Skip elements that are too small
-      const rect = element.getBoundingClientRect();
-      if (rect.width < 10 || rect.height < 10) return;
-      
-      const info = getElementInfo(element);
-      
-      // Include all important UI elements - text, images, and interactive
-      if (isImportantUIElement(element, info)) {
-        elements.push(info);
-        processedElements.add(element);
-      }
-    });
-    
-    // Sort elements by position (top to bottom, left to right)
-    elements.sort((a, b) => {
-      if (Math.abs(a.position.y - b.position.y) > 20) {
-        return a.position.y - b.position.y;
-      }
-      return a.position.x - b.position.x;
-    });
-
-    // Remove obvious duplicates but keep overlapping content
-    const uniqueElements = [];
-    const seenPositions = new Set();
-    
-    elements.forEach(element => {
-      // More lenient duplicate detection - only remove exact position + content matches
-      const positionKey = `${element.position.x},${element.position.y},${element.position.width},${element.position.height}`;
-      const contentKey = `${positionKey},${element.tagName},${element.textContent?.substring(0, 50)}`;
-      
-      if (!seenPositions.has(contentKey)) {
-        seenPositions.add(contentKey);
-        uniqueElements.push(element);
-      }
-    });
-    
-    // Group elements by proximity for better hierarchy
-    const groups = groupElementsByProximity(uniqueElements);
-    
-    return {
-      totalElements: uniqueElements.length,
-      extractedAt: new Date().toISOString(),
-      groups: groups.map((group, index) => ({
-        groupId: index + 1,
-        elementCount: group.length,
-        items: group
-      }))
-    };
-  }
 
   function extractAndShowElements() {
     const elementsContainer = document.getElementById('elements-json');
@@ -510,11 +289,13 @@
     elementsContainer.innerHTML = '<div class="loading-text">Extracting elements...</div>';
     
     try {
-      // Use the same function as content.js for consistency
-      const result = window.extractInteractiveElements ? 
-        window.extractInteractiveElements() : 
-        extractPageElements();
+      // FORCE using the same function that bounding boxes use
+      if (!window.extractInteractiveElements) {
+        elementsContainer.innerHTML = '<div class="error-text">extractInteractiveElements not available</div>';
+        return;
+      }
       
+      const result = window.extractInteractiveElements();
       displayElementsList(result, elementsContainer);
     } catch (error) {
       elementsContainer.innerHTML = `<div class="error-text">Error extracting elements: ${error.message}</div>`;
@@ -527,14 +308,25 @@
       return;
     }
 
-    const elementsHtml = result.elements.map((element, index) => {
-      // Show element type with clear badge
+    // Create simple flat list using exact same numbering as bounding boxes
+    const flatList = createFlatElementsList(result.elements);
+    
+    container.innerHTML = flatList;
+  }
+
+  function createFlatElementsList(elements) {
+    // Elements are already sorted by DOM order from extractInteractiveElements()
+    // Just render them with simple sequential numbering
+    return elements.map((element, index) => {
+      const elementNumber = index + 1; // Simple sequential numbering: 1, 2, 3, 4...
       const isInteractive = element.elementType === 'interactive';
+      
+      // Type badge
       const typeBadge = isInteractive ? 
         '<span class="type-badge interactive">Interactive</span>' : 
         '<span class="type-badge content">Content</span>';
       
-      // Show content only for elements that actually have meaningful content (not divs)
+      // Content preview (only for meaningful content, not divs)
       const shouldShowContent = element.title && 
         element.tagName !== 'div' && 
         element.title.trim().length > 0 && 
@@ -550,25 +342,30 @@
         contentPreview = `<div class="element-content">"${escapeHtml(truncated)}"</div>`;
       }
 
-      // Add group visual indicators
-      const groupIndicator = element.isFirstInGroup ? 
-        `<div class="group-header">📁 Group ${element.groupId + 1}</div>` : '';
-      
-      const groupBorder = element.groupSize > 1 ? 'group-member' : '';
-
       return `
-        ${groupIndicator}
-        <div class="sidebar-element-item ${groupBorder}">
+        <div class="sidebar-element-item">
           <div class="element-header">
-            <div class="element-tag ${isInteractive ? 'interactive' : 'content'}">${index + 1}. ${element.tagName}</div>
+            <div class="element-tag ${isInteractive ? 'interactive' : 'content'}">${elementNumber}. ${element.tagName}</div>
             <div class="element-types">${typeBadge}</div>
           </div>
           ${contentPreview}
         </div>
       `;
     }).join('');
+  }
 
-    container.innerHTML = elementsHtml;
+  function findDOMElementByInfo(elementInfo) {
+    const elements = document.querySelectorAll('*');
+    for (const element of elements) {
+      const rect = element.getBoundingClientRect();
+      if (Math.abs(rect.left - elementInfo.position.x) < 3 &&
+          Math.abs(rect.top - elementInfo.position.y) < 3 &&
+          Math.abs(rect.width - elementInfo.position.width) < 3 &&
+          Math.abs(rect.height - elementInfo.position.height) < 3) {
+        return element;
+      }
+    }
+    return null;
   }
 
   function escapeHtml(text) {
