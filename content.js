@@ -43,7 +43,7 @@ function getElementInfo(element) {
   
   return {
     tagName: element.tagName.toLowerCase(),
-    title: title ? title.substring(0, 100) : '',
+    title: title && typeof title === 'string' ? title.substring(0, 100) : String(title || '').substring(0, 100),
     type: element.type || null,
     id: element.id || null,
     className: element.className || null,
