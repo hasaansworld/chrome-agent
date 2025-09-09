@@ -11,6 +11,7 @@
   let sidebar = null;
   let isOpen = false;
   let isCollapsed = false;
+  let currentElements = null; // Store current elements data for click handling
 
   // Wait for DOM to be ready
   function waitForDOM(callback) {
@@ -133,7 +134,7 @@
       sidebar.classList.remove('open');
       sidebar.classList.add('collapsed');
       isCollapsed = true;
-      clearBoundingBoxes();
+      // Don't clear bounding boxes when collapsing
     }
   }
 
@@ -143,8 +144,8 @@
       sidebar.classList.add('open');
       isCollapsed = false;
       isOpen = true;
-      extractAndShowElements();
-      showBoundingBoxes();
+      // Don't refresh elements when expanding - only show existing data
+      // Bounding boxes should already be visible if they were shown before
     }
   }
 
@@ -167,16 +168,16 @@
       if (!sidebar) {
         sidebar = createSidebar();
         if (!sidebar) return;
+        
+        // Only refresh elements on first sidebar creation
+        showBoundingBoxes();
+        extractAndShowElements();
       }
       
       sidebar.classList.add('open');
       sidebar.classList.remove('collapsed');
       isOpen = true;
       isCollapsed = false;
-
-      // Show bounding boxes and extract elements when sidebar opens
-      showBoundingBoxes();
-      extractAndShowElements();
 
       // Focus on input
       setTimeout(() => {
@@ -199,8 +200,8 @@
       isOpen = false;
       isCollapsed = false;
       
-      // Clear bounding boxes when sidebar closes
-      clearBoundingBoxes();
+      // Don't clear bounding boxes when sidebar closes - let them persist
+      // clearBoundingBoxes();
     }
   }
 
@@ -308,10 +309,23 @@
       return;
     }
 
+    // Store elements data globally for click handling
+    currentElements = result.elements;
+
     // Create simple flat list using exact same numbering as bounding boxes
     const flatList = createFlatElementsList(result.elements);
     
     container.innerHTML = flatList;
+    
+    // Add click handlers to each sidebar element item
+    const sidebarItems = container.querySelectorAll('.sidebar-element-item[data-element-index]');
+    sidebarItems.forEach(item => {
+      item.addEventListener('click', (e) => {
+        e.preventDefault();
+        const elementIndex = parseInt(item.getAttribute('data-element-index'));
+        clickElementByIndex(elementIndex);
+      });
+    });
   }
 
   function createFlatElementsList(elements) {
@@ -343,7 +357,7 @@
       }
 
       return `
-        <div class="sidebar-element-item">
+        <div class="sidebar-element-item" data-element-index="${index}" style="cursor: pointer;">
           <div class="element-header">
             <div class="element-tag ${isInteractive ? 'interactive' : 'content'}">${elementNumber}. ${element.tagName}</div>
             <div class="element-types">${typeBadge}</div>
@@ -366,6 +380,35 @@
       }
     }
     return null;
+  }
+
+  function clickElementByIndex(elementIndex) {
+    try {
+      if (!currentElements || elementIndex < 0 || elementIndex >= currentElements.length) {
+        console.warn('Element not found at index:', elementIndex);
+        return;
+      }
+
+      const elementInfo = currentElements[elementIndex];
+      
+      // Use the stored DOM element reference from the single-pass extraction
+      const domElement = elementInfo.domElement;
+      
+      if (domElement) {
+        // Scroll element into view first
+        domElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        
+        // Trigger a real click event
+        setTimeout(() => {
+          domElement.click();
+          console.log('Clicked element:', elementInfo.tagName, elementInfo.title);
+        }, 300); // Small delay to allow scroll to complete
+      } else {
+        console.warn('DOM element not found for:', elementInfo);
+      }
+    } catch (error) {
+      console.error('Error clicking element:', error);
+    }
   }
 
   function escapeHtml(text) {
