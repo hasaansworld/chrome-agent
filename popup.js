@@ -75,8 +75,14 @@ document.addEventListener('DOMContentLoaded', function() {
     listViewEl.innerHTML = currentData.elements.map((element, index) => {
       const details = [];
       
+      // Show element type
+      if (element.elementType) {
+        const typeColor = element.elementType === 'interactive' ? '#1565c0' : '#2e7d32';
+        details.push(`<span class="element-detail"><span class="detail-label">Type:</span> <span style="color: ${typeColor}; font-weight: 500;">${element.elementType}</span></span>`);
+      }
+      
       if (element.type) {
-        details.push(`<span class="element-detail"><span class="detail-label">Type:</span> ${element.type}</span>`);
+        details.push(`<span class="element-detail"><span class="detail-label">Input Type:</span> ${element.type}</span>`);
       }
       
       if (element.id) {
@@ -90,9 +96,12 @@ document.addEventListener('DOMContentLoaded', function() {
       
       details.push(`<span class="element-detail position"><span class="detail-label">Position:</span> (${element.position.x}, ${element.position.y})</span>`);
 
+      const tagColor = element.elementType === 'interactive' ? '#e3f2fd' : '#e8f5e8';
+      const tagTextColor = element.elementType === 'interactive' ? '#1565c0' : '#2e7d32';
+
       return `
         <div class="element-item">
-          <div class="element-tag">${index + 1}. ${element.tagName}</div>
+          <div class="element-tag" style="background: ${tagColor}; color: ${tagTextColor};">${index + 1}. ${element.tagName}</div>
           <div class="element-title">${escapeHtml(element.title)}</div>
           <div class="element-details">
             ${details.join('')}

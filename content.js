@@ -79,6 +79,73 @@ function isElementInViewport(element) {
   );
 }
 
+function hasDirectTextContent(element) {
+  // Check if element has direct text content (not from children)
+  const childNodes = Array.from(element.childNodes);
+  const hasDirectText = childNodes.some(node => 
+    node.nodeType === Node.TEXT_NODE && node.textContent.trim().length > 0
+  );
+  
+  // For span tags and other inline elements, also check if they contain only text
+  // (no complex nested structure) and have meaningful content
+  if (!hasDirectText && element.tagName && ['SPAN', 'DIV', 'P', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'LI'].includes(element.tagName)) {
+    const textContent = element.textContent?.trim();
+    const htmlChildren = Array.from(element.children);
+    
+    // If it has text and only simple formatting children, consider it as having direct content
+    if (textContent && textContent.length > 2 && htmlChildren.length <= 3) {
+      const simpleFormatting = ['SPAN', 'STRONG', 'EM', 'B', 'I', 'U', 'MARK', 'SMALL'];
+      const hasOnlySimpleFormatting = htmlChildren.every(child => 
+        simpleFormatting.includes(child.tagName)
+      );
+      
+      if (hasOnlySimpleFormatting) return true;
+    }
+  }
+  
+  return hasDirectText;
+}
+
+function hasDirectImageContent(element) {
+  // Check if element is an image or has background image
+  if (element.tagName === 'IMG') return true;
+  
+  const computedStyle = window.getComputedStyle(element);
+  const bgImage = computedStyle.backgroundImage;
+  return bgImage && bgImage !== 'none' && !bgImage.includes('data:');
+}
+
+function isContentElement(element) {
+  // Always include elements with direct text content regardless of children
+  if (hasDirectTextContent(element)) return true;
+  
+  // Always include image elements
+  if (hasDirectImageContent(element)) return true;
+  
+  // For elements without direct text, check if they're simple content containers
+  const children = Array.from(element.children);
+  
+  // If no children, check if it has any meaningful content
+  if (children.length === 0) {
+    const textContent = element.textContent?.trim();
+    return textContent && textContent.length > 0;
+  }
+  
+  // If it has only simple inline elements as children, it might be content
+  const simpleInlineElements = ['SPAN', 'STRONG', 'EM', 'B', 'I', 'U', 'MARK', 'SMALL', 'SUB', 'SUP'];
+  const hasOnlySimpleChildren = children.every(child => 
+    simpleInlineElements.includes(child.tagName) || child.tagName === 'IMG'
+  );
+  
+  // If it has only simple children and some text content, it's probably content
+  if (hasOnlySimpleChildren && children.length <= 5) {
+    const textContent = element.textContent?.trim();
+    return textContent && textContent.length > 2;
+  }
+  
+  return false;
+}
+
 function extractInteractiveElements() {
   const interactiveSelectors = [
     'button',
@@ -104,6 +171,7 @@ function extractInteractiveElements() {
   const elements = [];
   const foundElements = new Set();
 
+  // First, get all interactive elements
   interactiveSelectors.forEach(selector => {
     try {
       const matches = document.querySelectorAll(selector);
@@ -112,12 +180,38 @@ function extractInteractiveElements() {
           foundElements.add(element);
           
           const elementInfo = getElementInfo(element);
+          elementInfo.elementType = 'interactive';
           
           elements.push(elementInfo);
         }
       });
     } catch (e) {
       console.warn(`Error processing selector ${selector}:`, e);
+    }
+  });
+
+  // Then, get all elements with direct text or image content
+  const allElements = document.querySelectorAll('*');
+  allElements.forEach(element => {
+    if (!foundElements.has(element) && 
+        element.offsetWidth > 0 && 
+        element.offsetHeight > 0 && 
+        isElementInViewport(element) &&
+        isContentElement(element)) {
+      
+      const rect = element.getBoundingClientRect();
+      // Skip very small elements that are likely decorative, but be more lenient for span tags
+      const minWidth = element.tagName === 'SPAN' ? 10 : 20;
+      const minHeight = element.tagName === 'SPAN' ? 10 : 15;
+      
+      if (rect.width < minWidth || rect.height < minHeight) return;
+      
+      foundElements.add(element);
+      
+      const elementInfo = getElementInfo(element);
+      elementInfo.elementType = 'content';
+      
+      elements.push(elementInfo);
     }
   });
 
@@ -154,9 +248,15 @@ function createBoundingBoxContainer() {
   return boundingBoxContainer;
 }
 
-function createBoundingBox(element, index) {
+function createBoundingBox(element, index, elementInfo) {
   const rect = element.getBoundingClientRect();
   const box = document.createElement('div');
+  
+  // Different colors for interactive vs content elements
+  const isInteractive = elementInfo.elementType === 'interactive';
+  const borderColor = isInteractive ? '#ff4444' : '#4CAF50';
+  const bgColor = isInteractive ? 'rgba(255, 68, 68, 0.1)' : 'rgba(76, 175, 80, 0.1)';
+  const labelBg = isInteractive ? '#ff4444' : '#4CAF50';
   
   box.style.cssText = `
     position: absolute;
@@ -164,8 +264,8 @@ function createBoundingBox(element, index) {
     top: ${rect.top}px;
     width: ${rect.width}px;
     height: ${rect.height}px;
-    border: 2px solid #ff4444;
-    background: rgba(255, 68, 68, 0.1);
+    border: 2px solid ${borderColor};
+    background: ${bgColor};
     pointer-events: none;
     box-sizing: border-box;
   `;
@@ -177,7 +277,7 @@ function createBoundingBox(element, index) {
     position: absolute;
     top: -20px;
     left: 0;
-    background: #ff4444;
+    background: ${labelBg};
     color: white;
     padding: 2px 6px;
     font-size: 12px;
@@ -206,7 +306,7 @@ function showBoundingBoxes() {
           Math.abs(rect.width - elementInfo.position.width) < 5 &&
           Math.abs(rect.height - elementInfo.position.height) < 5) {
         
-        const boundingBox = createBoundingBox(element, index);
+        const boundingBox = createBoundingBox(element, index, elementInfo);
         container.appendChild(boundingBox);
         boundingBoxes.push(boundingBox);
         break;

@@ -31,8 +31,8 @@
 }
 
 #chat-assistant-sidebar.collapsed {
-  right: 0 !important;
-  width: 50px !important;
+  right: -400px !important;
+  width: 400px !important;
 }
 
 #chat-assistant-sidebar.collapsed .chat-assistant-header,
@@ -42,31 +42,32 @@
 }
 
 #chat-assistant-sidebar.collapsed .collapse-toggle {
-  display: block !important;
+  display: flex !important;
 }
 
 .collapse-toggle {
-  position: absolute !important;
-  top: 10px !important;
-  right: 10px !important;
-  width: 30px !important;
-  height: 30px !important;
+  position: fixed !important;
+  top: 20px !important;
+  right: 20px !important;
+  width: 40px !important;
+  height: 40px !important;
   background: #0969da !important;
   color: white !important;
   border: none !important;
-  border-radius: 6px !important;
+  border-radius: 8px !important;
   cursor: pointer !important;
   display: none !important;
   align-items: center !important;
   justify-content: center !important;
-  font-size: 16px !important;
+  font-size: 18px !important;
   z-index: 2147483648 !important;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2) !important;
-  transition: background-color 0.2s !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3) !important;
+  transition: all 0.2s !important;
 }
 
 .collapse-toggle:hover {
   background: #0860ca !important;
+  transform: scale(1.05) !important;
 }
 
 /* Remove body manipulation for overlay behavior */
