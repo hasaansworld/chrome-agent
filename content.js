@@ -109,6 +109,8 @@ function hasDirectTextContent(element) {
 }
 
 function findDOMElementByInfo(elementInfo) {
+  // No longer needed with single-pass approach - elements already have DOM references
+  // Keep for compatibility but it should not be called in the new flow
   const elements = document.querySelectorAll('*');
   for (const element of elements) {
     const rect = element.getBoundingClientRect();
@@ -183,107 +185,107 @@ function isContentElement(element) {
 }
 
 function extractInteractiveElements() {
-  // Clear DOM index cache for fresh extraction
-  clearDOMIndexCache();
-  
-  const interactiveSelectors = [
-    'button',
-    'input',
-    'select', 
-    'textarea',
-    'a[href]',
-    '[onclick]',
-    '[onmousedown]',
-    '[onmouseup]',
-    '[onkeydown]',
-    '[onkeyup]',
-    '[tabindex]',
-    '[role="button"]',
-    '[role="link"]',
-    '[role="menuitem"]',
-    '[role="tab"]',
-    '[role="checkbox"]',
-    '[role="radio"]',
-    '[contenteditable="true"]'
-  ];
-
+  // Ultra-fast single-pass DOM traversal approach
+  // Walk through DOM once in document order and directly identify elements
   const elements = [];
   const foundElements = new Set();
-
-  // First, get all interactive elements
-  interactiveSelectors.forEach(selector => {
-    try {
-      const matches = document.querySelectorAll(selector);
-      matches.forEach(element => {
-        if (!foundElements.has(element) && element.offsetWidth > 0 && element.offsetHeight > 0 && isElementInViewport(element)) {
-          foundElements.add(element);
-          
-          const elementInfo = getElementInfo(element);
-          elementInfo.elementType = 'interactive';
-          
-          elements.push(elementInfo);
+  
+  // Single DOM traversal - elements will be in document order automatically
+  const walker = document.createTreeWalker(
+    document.body,
+    NodeFilter.SHOW_ELEMENT,
+    {
+      acceptNode: function(element) {
+        // Skip our sidebar
+        if (element.id === 'chat-assistant-sidebar' || 
+            element.closest('#chat-assistant-sidebar')) {
+          return NodeFilter.FILTER_REJECT;
         }
-      });
-    } catch (e) {
-      console.warn(`Error processing selector ${selector}:`, e);
+        return NodeFilter.FILTER_ACCEPT;
+      }
     }
-  });
+  );
 
-  // Then, get all elements with direct text or image content
-  const allElements = document.querySelectorAll('*');
-  allElements.forEach(element => {
-    if (!foundElements.has(element) && 
-        element.offsetWidth > 0 && 
-        element.offsetHeight > 0 && 
-        isElementInViewport(element) &&
-        isContentElement(element)) {
+  let currentElement;
+  while (currentElement = walker.nextNode()) {
+    // Skip if already processed or not visible
+    if (foundElements.has(currentElement) || 
+        currentElement.offsetWidth <= 0 || 
+        currentElement.offsetHeight <= 0 || 
+        !isElementInViewport(currentElement)) {
+      continue;
+    }
+
+    let elementType = null;
+    
+    // Check if interactive (in priority order for efficiency)
+    if (isInteractiveElementFast(currentElement)) {
+      elementType = 'interactive';
+    }
+    // Check if content element
+    else if (isContentElementFast(currentElement)) {
+      const rect = currentElement.getBoundingClientRect();
+      // Skip very small elements
+      const minWidth = currentElement.tagName === 'SPAN' ? 10 : 20;
+      const minHeight = currentElement.tagName === 'SPAN' ? 10 : 15;
       
-      const rect = element.getBoundingClientRect();
-      // Skip very small elements that are likely decorative, but be more lenient for span tags
-      const minWidth = element.tagName === 'SPAN' ? 10 : 20;
-      const minHeight = element.tagName === 'SPAN' ? 10 : 15;
+      if (rect.width < minWidth || rect.height < minHeight) continue;
+      elementType = 'content';
+    }
+
+    // If element matches our criteria, add it
+    if (elementType) {
+      foundElements.add(currentElement);
       
-      if (rect.width < minWidth || rect.height < minHeight) return;
-      
-      foundElements.add(element);
-      
-      const elementInfo = getElementInfo(element);
-      elementInfo.elementType = 'content';
+      const elementInfo = getElementInfo(currentElement);
+      elementInfo.elementType = elementType;
+      elementInfo.domElement = currentElement; // Store DOM reference directly
       
       elements.push(elementInfo);
     }
-  });
+  }
 
-  // Efficiently sort elements by DOM order
-  // First, find all DOM elements and calculate their document positions once
-  const elementsWithDOM = elements.map(element => {
-    const domElement = findDOMElementByInfo(element);
-    return {
-      element,
-      domElement,
-      domIndex: domElement ? getDOMIndex(domElement) : -1
-    };
-  });
-  
-  // Sort by pre-calculated DOM indices
-  const sortedElements = elementsWithDOM
-    .sort((a, b) => {
-      // If both have DOM elements, sort by DOM index
-      if (a.domIndex !== -1 && b.domIndex !== -1) {
-        return a.domIndex - b.domIndex;
-      }
-      // Fallback to visual position if DOM elements not found
-      if (a.element.position.y !== b.element.position.y) {
-        return a.element.position.y - b.element.position.y;
-      }
-      return a.element.position.x - b.element.position.x;
-    })
-    .map(item => item.element); // Extract just the elements
-
+  // Elements are already in DOM order from TreeWalker - no sorting needed!
   return {
-    elements: sortedElements,
-    totalCount: sortedElements.length
+    elements: elements,
+    totalCount: elements.length
   };
+}
+
+// Fast interactive element detection (optimized for single-pass)
+function isInteractiveElementFast(element) {
+  const tagName = element.tagName;
+  
+  // Quick tag check first (most common case)
+  if (tagName === 'BUTTON' || tagName === 'INPUT' || tagName === 'SELECT' || 
+      tagName === 'TEXTAREA' || (tagName === 'A' && element.hasAttribute('href'))) {
+    return true;
+  }
+  
+  // Quick attribute checks
+  if (element.hasAttribute('onclick') || element.hasAttribute('tabindex') || 
+      element.getAttribute('contenteditable') === 'true') {
+    return true;
+  }
+  
+  // Role check (less common)
+  const role = element.getAttribute('role');
+  if (role && ['button', 'link', 'menuitem', 'tab', 'checkbox', 'radio'].includes(role)) {
+    return true;
+  }
+  
+  return false;
+}
+
+// Fast content element detection (optimized for single-pass)
+function isContentElementFast(element) {
+  // Quick exclusion for divs unless they have direct content
+  if (element.tagName === 'DIV' && !hasDirectTextContent(element)) {
+    return false;
+  }
+  
+  // Check for direct text or images
+  return hasDirectTextContent(element) || hasDirectImageContent(element);
 }
 
 // Bounding box management
@@ -359,8 +361,8 @@ function showBoundingBoxes() {
   
   // Draw individual element bounding boxes only
   result.elements.forEach((elementInfo, index) => {
-    // Find the actual DOM element using the cached or computed position
-    const domElement = findDOMElementByInfo(elementInfo);
+    // Use the DOM element reference directly from single-pass extraction
+    const domElement = elementInfo.domElement;
     
     if (domElement) {
       const boundingBox = createBoundingBox(domElement, index, elementInfo);
