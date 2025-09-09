@@ -122,6 +122,26 @@ function findDOMElementByInfo(elementInfo) {
   return null;
 }
 
+// Cache for DOM indices to avoid recalculation
+let domIndexCache = null;
+
+function getDOMIndex(element) {
+  // Create DOM index cache if it doesn't exist
+  if (!domIndexCache) {
+    domIndexCache = new Map();
+    const allElements = document.querySelectorAll('*');
+    allElements.forEach((el, index) => {
+      domIndexCache.set(el, index);
+    });
+  }
+  
+  return domIndexCache.get(element) ?? -1;
+}
+
+function clearDOMIndexCache() {
+  domIndexCache = null;
+}
+
 function hasDirectImageContent(element) {
   // Check if element is an image or has background image
   if (element.tagName === 'IMG') return true;
@@ -163,6 +183,9 @@ function isContentElement(element) {
 }
 
 function extractInteractiveElements() {
+  // Clear DOM index cache for fresh extraction
+  clearDOMIndexCache();
+  
   const interactiveSelectors = [
     'button',
     'input',
@@ -231,27 +254,31 @@ function extractInteractiveElements() {
     }
   });
 
-  // Sort elements by DOM order instead of visual position
-  const sortedElements = elements.sort((a, b) => {
-    // Find the actual DOM elements to compare their document positions
-    const domA = findDOMElementByInfo(a);
-    const domB = findDOMElementByInfo(b);
-    
-    if (!domA || !domB) {
-      // Fallback to visual position if we can't find DOM elements
-      if (a.position.y !== b.position.y) return a.position.y - b.position.y;
-      return a.position.x - b.position.x;
-    }
-    
-    // Use DOM document position for sorting
-    const position = domA.compareDocumentPosition(domB);
-    if (position & Node.DOCUMENT_POSITION_FOLLOWING) {
-      return -1; // domA comes before domB in document
-    } else if (position & Node.DOCUMENT_POSITION_PRECEDING) {
-      return 1; // domA comes after domB in document
-    }
-    return 0; // same element
+  // Efficiently sort elements by DOM order
+  // First, find all DOM elements and calculate their document positions once
+  const elementsWithDOM = elements.map(element => {
+    const domElement = findDOMElementByInfo(element);
+    return {
+      element,
+      domElement,
+      domIndex: domElement ? getDOMIndex(domElement) : -1
+    };
   });
+  
+  // Sort by pre-calculated DOM indices
+  const sortedElements = elementsWithDOM
+    .sort((a, b) => {
+      // If both have DOM elements, sort by DOM index
+      if (a.domIndex !== -1 && b.domIndex !== -1) {
+        return a.domIndex - b.domIndex;
+      }
+      // Fallback to visual position if DOM elements not found
+      if (a.element.position.y !== b.element.position.y) {
+        return a.element.position.y - b.element.position.y;
+      }
+      return a.element.position.x - b.element.position.x;
+    })
+    .map(item => item.element); // Extract just the elements
 
   return {
     elements: sortedElements,
