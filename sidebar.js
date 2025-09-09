@@ -284,11 +284,13 @@
     const windowHeight = window.innerHeight || document.documentElement.clientHeight;
     const windowWidth = window.innerWidth || document.documentElement.clientWidth;
     
+    // Check if element is at least partially visible
+    // Element is visible if any part of it overlaps with the viewport
     return (
-      rect.top >= 0 &&
-      rect.left >= 0 &&
-      rect.bottom <= windowHeight &&
-      rect.right <= windowWidth &&
+      rect.bottom > 0 &&        // Bottom edge is below viewport top
+      rect.right > 0 &&         // Right edge is to the right of viewport left
+      rect.top < windowHeight && // Top edge is above viewport bottom
+      rect.left < windowWidth && // Left edge is to the left of viewport right
       rect.width > 0 &&
       rect.height > 0 &&
       element.offsetWidth > 0 &&
@@ -502,17 +504,77 @@
   }
 
   function extractAndShowElements() {
-    const elementsJson = document.getElementById('elements-json');
-    if (!elementsJson) return;
+    const elementsContainer = document.getElementById('elements-json');
+    if (!elementsContainer) return;
     
-    elementsJson.textContent = 'Extracting elements...';
+    elementsContainer.innerHTML = '<div class="loading-text">Extracting elements...</div>';
     
     try {
-      const result = extractPageElements();
-      elementsJson.textContent = JSON.stringify(result, null, 2);
+      // Use the same function as content.js for consistency
+      const result = window.extractInteractiveElements ? 
+        window.extractInteractiveElements() : 
+        extractPageElements();
+      
+      displayElementsList(result, elementsContainer);
     } catch (error) {
-      elementsJson.textContent = 'Error extracting elements: ' + error.message;
+      elementsContainer.innerHTML = `<div class="error-text">Error extracting elements: ${error.message}</div>`;
     }
+  }
+
+  function displayElementsList(result, container) {
+    if (!result.elements || result.elements.length === 0) {
+      container.innerHTML = '<div class="no-elements">No elements found on this page.</div>';
+      return;
+    }
+
+    const elementsHtml = result.elements.map((element, index) => {
+      // Show element type with clear badge
+      const isInteractive = element.elementType === 'interactive';
+      const typeBadge = isInteractive ? 
+        '<span class="type-badge interactive">Interactive</span>' : 
+        '<span class="type-badge content">Content</span>';
+      
+      // Show content only for elements that actually have meaningful content (not divs)
+      const shouldShowContent = element.title && 
+        element.tagName !== 'div' && 
+        element.title.trim().length > 0 && 
+        element.title !== element.tagName && 
+        element.title !== element.href;
+      
+      let contentPreview = '';
+      if (shouldShowContent) {
+        const maxLength = 40;
+        const truncated = element.title.length > maxLength ? 
+          element.title.substring(0, maxLength) + '...' : 
+          element.title;
+        contentPreview = `<div class="element-content">"${escapeHtml(truncated)}"</div>`;
+      }
+
+      // Add group visual indicators
+      const groupIndicator = element.isFirstInGroup ? 
+        `<div class="group-header">📁 Group ${element.groupId + 1}</div>` : '';
+      
+      const groupBorder = element.groupSize > 1 ? 'group-member' : '';
+
+      return `
+        ${groupIndicator}
+        <div class="sidebar-element-item ${groupBorder}">
+          <div class="element-header">
+            <div class="element-tag ${isInteractive ? 'interactive' : 'content'}">${index + 1}. ${element.tagName}</div>
+            <div class="element-types">${typeBadge}</div>
+          </div>
+          ${contentPreview}
+        </div>
+      `;
+    }).join('');
+
+    container.innerHTML = elementsHtml;
+  }
+
+  function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
   }
 
   // Listen for messages from background script

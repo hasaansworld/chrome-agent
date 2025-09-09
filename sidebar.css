@@ -200,16 +200,122 @@
   background: #f6f8fa !important;
   border: 1px solid #d0d7de !important;
   border-radius: 8px !important;
-  padding: 12px !important;
-  font-family: 'Monaco', 'Consolas', 'Courier New', monospace !important;
+  padding: 8px !important;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif !important;
   font-size: 12px !important;
   line-height: 1.4 !important;
   overflow-y: auto !important;
-  white-space: pre-wrap !important;
-  word-wrap: break-word !important;
   color: #1a1a1a !important;
   margin: 0 !important;
   box-sizing: border-box !important;
+}
+
+.loading-text, .error-text, .no-elements {
+  text-align: center !important;
+  padding: 20px !important;
+  color: #666 !important;
+  font-style: italic !important;
+}
+
+.error-text {
+  color: #d73a49 !important;
+}
+
+.sidebar-element-item {
+  background: #ffffff !important;
+  border: 1px solid #e1e5e9 !important;
+  border-radius: 6px !important;
+  margin-bottom: 6px !important;
+  padding: 8px !important;
+  transition: background-color 0.2s !important;
+}
+
+.sidebar-element-item:hover {
+  background: #f8f9fa !important;
+}
+
+.sidebar-element-item.group-member {
+  border-left: 3px solid #9C27B0 !important;
+  padding-left: 10px !important;
+}
+
+.element-header {
+  display: flex !important;
+  justify-content: space-between !important;
+  align-items: center !important;
+  margin-bottom: 4px !important;
+}
+
+.element-tag {
+  display: inline-block !important;
+  padding: 2px 6px !important;
+  border-radius: 3px !important;
+  font-size: 11px !important;
+  font-weight: 500 !important;
+  text-transform: uppercase !important;
+  margin: 0 !important;
+}
+
+.element-tag.interactive {
+  background: #e3f2fd !important;
+  color: #1565c0 !important;
+}
+
+.element-tag.content {
+  background: #e8f5e8 !important;
+  color: #2e7d32 !important;
+}
+
+.element-types {
+  display: flex !important;
+  gap: 4px !important;
+}
+
+.type-badge {
+  padding: 1px 4px !important;
+  border-radius: 2px !important;
+  font-size: 9px !important;
+  font-weight: 600 !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.3px !important;
+  border: 1px solid transparent !important;
+}
+
+.type-badge.interactive {
+  background: #e3f2fd !important;
+  color: #1565c0 !important;
+  border-color: #bbdefb !important;
+}
+
+.type-badge.content {
+  background: #e8f5e8 !important;
+  color: #2e7d32 !important;
+  border-color: #c8e6c9 !important;
+}
+
+.element-content {
+  font-size: 11px !important;
+  color: #555 !important;
+  font-style: italic !important;
+  line-height: 1.3 !important;
+  background: #f0f2f5 !important;
+  padding: 4px 6px !important;
+  border-radius: 3px !important;
+  margin-top: 4px !important;
+  border-left: 2px solid #ddd !important;
+}
+
+.group-header {
+  font-weight: 600 !important;
+  color: #9C27B0 !important;
+  font-size: 11px !important;
+  padding: 4px 0 2px 0 !important;
+  margin-bottom: 4px !important;
+  background: linear-gradient(90deg, rgba(156, 39, 176, 0.1) 0%, transparent 100%) !important;
+  padding-left: 6px !important;
+  border-radius: 3px !important;
+  border: none !important;
+  margin: 0 0 4px 0 !important;
 }
 
 .chat-assistant-section {

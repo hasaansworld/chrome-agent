@@ -75,37 +75,49 @@ document.addEventListener('DOMContentLoaded', function() {
     listViewEl.innerHTML = currentData.elements.map((element, index) => {
       const details = [];
       
-      // Show element type
+      // Show element type with clear badge
       if (element.elementType) {
-        const typeColor = element.elementType === 'interactive' ? '#1565c0' : '#2e7d32';
-        details.push(`<span class="element-detail"><span class="detail-label">Type:</span> <span style="color: ${typeColor}; font-weight: 500;">${element.elementType}</span></span>`);
+        const isInteractive = element.elementType === 'interactive';
+        const typeBadge = isInteractive ? 
+          '<span class="type-badge interactive">Interactive</span>' : 
+          '<span class="type-badge content">Content</span>';
+        details.push(typeBadge);
       }
       
-      if (element.type) {
-        details.push(`<span class="element-detail"><span class="detail-label">Input Type:</span> ${element.type}</span>`);
+      // Show content only for elements that actually have meaningful content (not divs)
+      const shouldShowContent = element.title && 
+        element.tagName !== 'div' && 
+        element.title.trim().length > 0 && 
+        element.title !== element.tagName && 
+        element.title !== element.href;
+      
+      let contentPreview = '';
+      if (shouldShowContent) {
+        const maxLength = 50;
+        const truncated = element.title.length > maxLength ? 
+          element.title.substring(0, maxLength) + '...' : 
+          element.title;
+        contentPreview = `<div class="element-content">"${escapeHtml(truncated)}"</div>`;
       }
-      
-      if (element.id) {
-        details.push(`<span class="element-detail"><span class="detail-label">ID:</span> ${element.id}</span>`);
-      }
-      
-      if (element.href) {
-        details.push(`<span class="element-detail"><span class="detail-label">URL:</span> ${element.href}</span>`);
-      }
-      
-      
-      details.push(`<span class="element-detail position"><span class="detail-label">Position:</span> (${element.position.x}, ${element.position.y})</span>`);
 
       const tagColor = element.elementType === 'interactive' ? '#e3f2fd' : '#e8f5e8';
       const tagTextColor = element.elementType === 'interactive' ? '#1565c0' : '#2e7d32';
 
+      // Add group visual indicators
+      const groupIndicator = element.isFirstInGroup ? 
+        `<div class="group-header">📁 Group ${element.groupId + 1}</div>` : '';
+      
+      const groupBorder = element.groupSize > 1 ? 'style="border-left: 3px solid #9C27B0; padding-left: 8px;"' : '';
+      const groupMargin = element.isFirstInGroup ? 'style="margin-top: 16px;"' : '';
+
       return `
-        <div class="element-item">
-          <div class="element-tag" style="background: ${tagColor}; color: ${tagTextColor};">${index + 1}. ${element.tagName}</div>
-          <div class="element-title">${escapeHtml(element.title)}</div>
-          <div class="element-details">
-            ${details.join('')}
+        ${groupIndicator}
+        <div class="element-item" ${groupBorder} ${groupMargin}>
+          <div class="element-header">
+            <div class="element-tag" style="background: ${tagColor}; color: ${tagTextColor};">${index + 1}. ${element.tagName}</div>
+            <div class="element-types">${details.join('')}</div>
           </div>
+          ${contentPreview}
         </div>
       `;
     }).join('');

@@ -69,11 +69,13 @@ function isElementInViewport(element) {
   const windowHeight = window.innerHeight || document.documentElement.clientHeight;
   const windowWidth = window.innerWidth || document.documentElement.clientWidth;
   
+  // Check if element is at least partially visible
+  // Element is visible if any part of it overlaps with the viewport
   return (
-    rect.top >= 0 &&
-    rect.left >= 0 &&
-    rect.bottom <= windowHeight &&
-    rect.right <= windowWidth &&
+    rect.bottom > 0 &&        // Bottom edge is below viewport top
+    rect.right > 0 &&         // Right edge is to the right of viewport left
+    rect.top < windowHeight && // Top edge is above viewport bottom
+    rect.left < windowWidth && // Left edge is to the left of viewport right
     rect.width > 0 &&
     rect.height > 0
   );
@@ -104,6 +106,159 @@ function hasDirectTextContent(element) {
   }
   
   return hasDirectText;
+}
+
+// DOM element cache for finding elements by position
+let elementCache = new Map();
+
+function findDOMElementByInfo(elementInfo) {
+  const cacheKey = `${elementInfo.position.x}-${elementInfo.position.y}-${elementInfo.position.width}-${elementInfo.position.height}`;
+  
+  if (elementCache.has(cacheKey)) {
+    return elementCache.get(cacheKey);
+  }
+  
+  const elements = document.querySelectorAll('*');
+  for (const element of elements) {
+    const rect = element.getBoundingClientRect();
+    if (Math.abs(rect.left - elementInfo.position.x) < 3 &&
+        Math.abs(rect.top - elementInfo.position.y) < 3 &&
+        Math.abs(rect.width - elementInfo.position.width) < 3 &&
+        Math.abs(rect.height - elementInfo.position.height) < 3) {
+      elementCache.set(cacheKey, element);
+      return element;
+    }
+  }
+  return null;
+}
+
+function findCommonAncestor(element1, element2) {
+  if (!element1 || !element2) return null;
+  
+  const ancestors1 = [];
+  let current = element1;
+  while (current && current !== document.body) {
+    ancestors1.push(current);
+    current = current.parentElement;
+  }
+  
+  current = element2;
+  while (current && current !== document.body) {
+    if (ancestors1.includes(current)) {
+      return current;
+    }
+    current = current.parentElement;
+  }
+  
+  return document.body;
+}
+
+function getAncestorDepth(element1, element2) {
+  const ancestor = findCommonAncestor(element1, element2);
+  if (!ancestor) return Infinity;
+  
+  let depth1 = 0;
+  let current = element1;
+  while (current && current !== ancestor) {
+    depth1++;
+    current = current.parentElement;
+  }
+  
+  let depth2 = 0;
+  current = element2;
+  while (current && current !== ancestor) {
+    depth2++;
+    current = current.parentElement;
+  }
+  
+  return depth1 + depth2;
+}
+
+function groupElementsByHierarchy(elements) {
+  // Clear cache for fresh grouping
+  elementCache.clear();
+  
+  // Create element groups based on DOM hierarchy
+  const groups = [];
+  const processedElements = new Set();
+  
+  for (let i = 0; i < elements.length; i++) {
+    if (processedElements.has(i)) continue;
+    
+    const currentElement = elements[i];
+    const currentDOMElement = findDOMElementByInfo(currentElement);
+    
+    const group = {
+      id: groups.length,
+      elements: [{ ...currentElement, originalIndex: i }],
+      domElements: currentDOMElement ? [currentDOMElement] : [],
+      commonAncestor: currentDOMElement,
+      minPosition: { ...currentElement.position },
+      maxPosition: { 
+        x: currentElement.position.x + currentElement.position.width,
+        y: currentElement.position.y + currentElement.position.height
+      }
+    };
+    
+    processedElements.add(i);
+    
+    // Find related elements (same parent hierarchy)
+    for (let j = i + 1; j < elements.length; j++) {
+      if (processedElements.has(j)) continue;
+      
+      const otherElement = elements[j];
+      const otherDOMElement = findDOMElementByInfo(otherElement);
+      
+      if (!currentDOMElement || !otherDOMElement) continue;
+      
+      const depth = getAncestorDepth(currentDOMElement, otherDOMElement);
+      
+      // Group elements that are closely related in the DOM (within 4 levels)
+      if (depth <= 4) {
+        group.elements.push({ ...otherElement, originalIndex: j });
+        group.domElements.push(otherDOMElement);
+        processedElements.add(j);
+        
+        // Update group bounds
+        group.minPosition.x = Math.min(group.minPosition.x, otherElement.position.x);
+        group.minPosition.y = Math.min(group.minPosition.y, otherElement.position.y);
+        group.maxPosition.x = Math.max(group.maxPosition.x, otherElement.position.x + otherElement.position.width);
+        group.maxPosition.y = Math.max(group.maxPosition.y, otherElement.position.y + otherElement.position.height);
+        
+        // Update common ancestor
+        if (group.commonAncestor) {
+          group.commonAncestor = findCommonAncestor(group.commonAncestor, otherDOMElement);
+        }
+      }
+    }
+    
+    groups.push(group);
+  }
+  
+  // Sort groups by position
+  groups.sort((a, b) => {
+    if (a.minPosition.y !== b.minPosition.y) {
+      return a.minPosition.y - b.minPosition.y;
+    }
+    return a.minPosition.x - b.minPosition.x;
+  });
+  
+  // Create flat list maintaining group order
+  const flatElements = [];
+  groups.forEach((group, groupIndex) => {
+    group.elements.forEach((element, elementIndex) => {
+      flatElements.push({
+        ...element,
+        groupId: groupIndex,
+        groupIndex: elementIndex,
+        isFirstInGroup: elementIndex === 0,
+        isLastInGroup: elementIndex === group.elements.length - 1,
+        groupSize: group.elements.length
+      });
+    });
+  });
+  
+  return { groups, flatElements };
 }
 
 function hasDirectImageContent(element) {
@@ -220,14 +375,19 @@ function extractInteractiveElements() {
     return a.position.x - b.position.x;
   });
 
+  // Group elements by hierarchical relationships
+  const groupedElements = groupElementsByHierarchy(sortedElements);
+
   return {
-    elements: sortedElements,
+    elements: groupedElements.flatElements,
+    groups: groupedElements.groups,
     totalCount: sortedElements.length
   };
 }
 
 // Bounding box management
 let boundingBoxes = [];
+let groupBoundingBoxes = [];
 let boundingBoxContainer = null;
 
 function createBoundingBoxContainer() {
@@ -290,27 +450,70 @@ function createBoundingBox(element, index, elementInfo) {
   return box;
 }
 
+function createGroupBoundingBox(group) {
+  const box = document.createElement('div');
+  
+  // Group bounding box styling
+  box.style.cssText = `
+    position: absolute;
+    left: ${group.minPosition.x - 5}px;
+    top: ${group.minPosition.y - 5}px;
+    width: ${group.maxPosition.x - group.minPosition.x + 10}px;
+    height: ${group.maxPosition.y - group.minPosition.y + 10}px;
+    border: 3px dashed #9C27B0;
+    background: rgba(156, 39, 176, 0.05);
+    pointer-events: none;
+    box-sizing: border-box;
+    border-radius: 8px;
+  `;
+  
+  // Add group label
+  const label = document.createElement('div');
+  label.textContent = `Group ${group.id + 1} (${group.elements.length} items)`;
+  label.style.cssText = `
+    position: absolute;
+    top: -25px;
+    left: 0;
+    background: #9C27B0;
+    color: white;
+    padding: 3px 8px;
+    font-size: 11px;
+    font-weight: bold;
+    border-radius: 4px;
+    font-family: Arial, sans-serif;
+    white-space: nowrap;
+  `;
+  
+  box.appendChild(label);
+  return box;
+}
+
 function showBoundingBoxes() {
   clearBoundingBoxes();
   
   const result = extractInteractiveElements();
   const container = createBoundingBoxContainer();
   
-  result.elements.forEach((elementInfo, index) => {
-    // Find the actual DOM element using the position and other info
-    const elements = document.querySelectorAll('*');
-    for (const element of elements) {
-      const rect = element.getBoundingClientRect();
-      if (Math.abs(rect.left - elementInfo.position.x) < 5 &&
-          Math.abs(rect.top - elementInfo.position.y) < 5 &&
-          Math.abs(rect.width - elementInfo.position.width) < 5 &&
-          Math.abs(rect.height - elementInfo.position.height) < 5) {
-        
-        const boundingBox = createBoundingBox(element, index, elementInfo);
-        container.appendChild(boundingBox);
-        boundingBoxes.push(boundingBox);
-        break;
+  // First, draw group bounding boxes (behind individual elements)
+  if (result.groups && result.groups.length > 1) {
+    result.groups.forEach(group => {
+      if (group.elements.length > 1) { // Only show group boxes for groups with multiple elements
+        const groupBox = createGroupBoundingBox(group);
+        container.appendChild(groupBox);
+        groupBoundingBoxes.push(groupBox);
       }
+    });
+  }
+  
+  // Then, draw individual element bounding boxes
+  result.elements.forEach((elementInfo, index) => {
+    // Find the actual DOM element using the cached or computed position
+    const domElement = findDOMElementByInfo(elementInfo);
+    
+    if (domElement) {
+      const boundingBox = createBoundingBox(domElement, index, elementInfo);
+      container.appendChild(boundingBox);
+      boundingBoxes.push(boundingBox);
     }
   });
   
@@ -323,11 +526,13 @@ function clearBoundingBoxes() {
     boundingBoxContainer = null;
   }
   boundingBoxes = [];
+  groupBoundingBoxes = [];
 }
 
 // Expose functions globally for sidebar.js to use
 window.showBoundingBoxes = showBoundingBoxes;
 window.clearBoundingBoxes = clearBoundingBoxes;
+window.extractInteractiveElements = extractInteractiveElements;
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'extractElements') {
