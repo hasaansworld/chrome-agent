@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    body {
+      width: 600px;
+      max-height: 700px;
+      margin: 0;
+      padding: 16px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
+      font-size: 14px;
+    }
+
+    .header {
+      margin-bottom: 16px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid #e1e5e9;
+    }
+
+    .title {
+      font-size: 18px;
+      font-weight: 600;
+      color: #1a1a1a;
+      margin: 0 0 8px 0;
+    }
+
+    .controls {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+
+    .refresh-btn, .view-toggle {
+      background: #1976d2;
+      color: white;
+      border: none;
+      padding: 8px 16px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 13px;
+    }
+
+    .refresh-btn:hover, .view-toggle:hover {
+      background: #1565c0;
+    }
+
+    .view-toggle.active {
+      background: #2196f3;
+    }
+
+    .count {
+      color: #666;
+      font-size: 13px;
+    }
+
+    .loading {
+      text-align: center;
+      padding: 40px 0;
+      color: #666;
+    }
+
+    .error {
+      background: #fee;
+      border: 1px solid #fcc;
+      border-radius: 4px;
+      padding: 12px;
+      color: #c33;
+      font-size: 13px;
+    }
+
+    .content {
+      max-height: 550px;
+      overflow-y: auto;
+      border: 1px solid #e1e5e9;
+      border-radius: 6px;
+      padding: 12px;
+      background: #fafafa;
+    }
+
+    /* JSON Viewer Styles */
+    .json-item {
+      font-family: 'Monaco', 'Consolas', 'Courier New', monospace;
+      font-size: 12px;
+      line-height: 1.4;
+      margin: 2px 0;
+    }
+
+    .json-key {
+      color: #0066cc;
+      font-weight: bold;
+    }
+
+    .json-string {
+      color: #009900;
+    }
+
+    .json-number {
+      color: #cc6600;
+    }
+
+    .json-boolean {
+      color: #9900cc;
+    }
+
+    .json-null {
+      color: #999;
+    }
+
+    .json-bracket {
+      color: #666;
+      font-weight: bold;
+    }
+
+    .json-length {
+      color: #888;
+      font-style: italic;
+      font-size: 11px;
+    }
+
+    .json-toggle {
+      color: #666;
+      user-select: none;
+      font-family: monospace;
+    }
+
+    .json-toggle:hover {
+      color: #333;
+    }
+
+    /* List View Styles */
+    .element-item {
+      border: 1px solid #e1e5e9;
+      border-radius: 6px;
+      margin-bottom: 8px;
+      padding: 12px;
+      background: #fff;
+      transition: background-color 0.2s;
+    }
+
+    .element-item:hover {
+      background: #f8f9fa;
+    }
+
+    .element-tag {
+      display: inline-block;
+      background: #e3f2fd;
+      color: #1565c0;
+      padding: 2px 6px;
+      border-radius: 3px;
+      font-size: 11px;
+      font-weight: 500;
+      text-transform: uppercase;
+      margin-bottom: 6px;
+    }
+
+    .element-title {
+      font-weight: 500;
+      color: #1a1a1a;
+      margin-bottom: 4px;
+      word-break: break-word;
+    }
+
+    .element-details {
+      font-size: 12px;
+      color: #666;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .element-detail {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .detail-label {
+      font-weight: 500;
+    }
+
+    .position {
+      color: #888;
+    }
+
+    .view-content {
+      display: none;
+    }
+
+    .view-content.active {
+      display: block;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1 class="title">Interactive Elements Extractor</h1>
+    <div class="controls">
+      <button class="refresh-btn" id="refreshBtn">Refresh</button>
+      <button class="refresh-btn" id="copyBtn">Copy</button>
+      <button class="refresh-btn" id="clearBoxesBtn">Clear Boxes</button>
+      <button class="view-toggle active" id="jsonViewBtn" data-view="json">JSON View</button>
+      <button class="view-toggle" id="listViewBtn" data-view="list">List View</button>
+    </div>
+    <div class="count" id="elementCount">Loading...</div>
+  </div>
+
+  <div id="loading" class="loading">
+    Extracting interactive elements...
+  </div>
+
+  <div id="error" class="error" style="display: none;"></div>
+
+  <div id="jsonView" class="view-content content active"></div>
+  <div id="listView" class="view-content content"></div>
+
+  <script src="json-viewer.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>

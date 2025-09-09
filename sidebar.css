@@ -1,0 +1,353 @@
+/* Chat Assistant Sidebar - Robust across all websites */
+#chat-assistant-sidebar {
+  position: fixed !important;
+  top: 0 !important;
+  right: -400px !important;
+  width: 400px !important;
+  height: 100vh !important;
+  background: #ffffff !important;
+  box-shadow: -2px 0 10px rgba(0, 0, 0, 0.1) !important;
+  z-index: 2147483647 !important;
+  transition: right 0.3s ease-in-out !important;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif !important;
+  font-size: 14px !important;
+  overflow: hidden !important;
+  border-left: 1px solid #e1e5e9 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border-radius: 0 !important;
+  border-right: none !important;
+  border-top: none !important;
+  border-bottom: none !important;
+  box-sizing: border-box !important;
+  color: #1a1a1a !important;
+  line-height: 1.4 !important;
+}
+
+#chat-assistant-sidebar.open {
+  right: 0 !important;
+}
+
+#chat-assistant-sidebar.collapsed {
+  right: 0 !important;
+  width: 50px !important;
+}
+
+#chat-assistant-sidebar.collapsed .chat-assistant-header,
+#chat-assistant-sidebar.collapsed .chat-assistant-content,
+#chat-assistant-sidebar.collapsed .chat-assistant-section {
+  display: none !important;
+}
+
+#chat-assistant-sidebar.collapsed .collapse-toggle {
+  display: block !important;
+}
+
+.collapse-toggle {
+  position: absolute !important;
+  top: 10px !important;
+  right: 10px !important;
+  width: 30px !important;
+  height: 30px !important;
+  background: #0969da !important;
+  color: white !important;
+  border: none !important;
+  border-radius: 6px !important;
+  cursor: pointer !important;
+  display: none !important;
+  align-items: center !important;
+  justify-content: center !important;
+  font-size: 16px !important;
+  z-index: 2147483648 !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2) !important;
+  transition: background-color 0.2s !important;
+}
+
+.collapse-toggle:hover {
+  background: #0860ca !important;
+}
+
+/* Remove body manipulation for overlay behavior */
+
+.chat-assistant-header {
+  background: #ffffff !important;
+  padding: 16px !important;
+  border-bottom: 1px solid #e1e5e9 !important;
+  position: sticky !important;
+  top: 0 !important;
+  z-index: 10 !important;
+  display: flex !important;
+  justify-content: space-between !important;
+  align-items: center !important;
+  margin: 0 !important;
+  box-sizing: border-box !important;
+  min-height: auto !important;
+  max-height: none !important;
+}
+
+.chat-assistant-title {
+  font-size: 18px !important;
+  font-weight: 600 !important;
+  color: #1a1a1a !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  background: transparent !important;
+  border: none !important;
+  text-decoration: none !important;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif !important;
+  line-height: 1.4 !important;
+}
+
+.chat-assistant-close-btn {
+  background: transparent !important;
+  border: none !important;
+  cursor: pointer !important;
+  padding: 6px !important;
+  border-radius: 6px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  color: #666 !important;
+  transition: background-color 0.2s, color 0.2s !important;
+  margin: 0 !important;
+  font-size: 14px !important;
+  min-width: auto !important;
+  min-height: auto !important;
+  box-shadow: none !important;
+  outline: none !important;
+}
+
+.chat-assistant-close-btn:hover {
+  background: #f3f4f6 !important;
+  color: #333 !important;
+}
+
+.chat-assistant-close-btn svg {
+  width: 18px !important;
+  height: 18px !important;
+  stroke: currentColor !important;
+  fill: none !important;
+  stroke-width: 2 !important;
+  stroke-linecap: round !important;
+  stroke-linejoin: round !important;
+}
+
+.chat-assistant-content {
+  flex: 1 !important;
+  padding: 16px !important;
+  overflow-y: auto !important;
+  background: #ffffff !important;
+  margin: 0 !important;
+  border: none !important;
+  box-sizing: border-box !important;
+}
+
+.elements-viewer {
+  height: 100% !important;
+  display: flex !important;
+  flex-direction: column !important;
+  background: #ffffff !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: none !important;
+}
+
+.elements-header {
+  display: flex !important;
+  justify-content: space-between !important;
+  align-items: center !important;
+  margin-bottom: 12px !important;
+  padding: 0 !important;
+  background: transparent !important;
+  border: none !important;
+}
+
+.elements-title {
+  font-size: 14px !important;
+  font-weight: 600 !important;
+  color: #1a1a1a !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  background: transparent !important;
+  border: none !important;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif !important;
+}
+
+.refresh-elements-btn {
+  background: #0969da !important;
+  color: white !important;
+  border: none !important;
+  padding: 6px 12px !important;
+  border-radius: 6px !important;
+  cursor: pointer !important;
+  font-size: 12px !important;
+  font-weight: 500 !important;
+  transition: background-color 0.2s !important;
+  margin: 0 !important;
+  outline: none !important;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif !important;
+}
+
+.refresh-elements-btn:hover {
+  background: #0860ca !important;
+}
+
+.elements-json {
+  flex: 1 !important;
+  background: #f6f8fa !important;
+  border: 1px solid #d0d7de !important;
+  border-radius: 8px !important;
+  padding: 12px !important;
+  font-family: 'Monaco', 'Consolas', 'Courier New', monospace !important;
+  font-size: 12px !important;
+  line-height: 1.4 !important;
+  overflow-y: auto !important;
+  white-space: pre-wrap !important;
+  word-wrap: break-word !important;
+  color: #1a1a1a !important;
+  margin: 0 !important;
+  box-sizing: border-box !important;
+}
+
+.chat-assistant-section {
+  background: #ffffff !important;
+  border-top: 1px solid #e1e5e9 !important;
+  padding: 16px !important;
+  box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.1) !important;
+  margin: 0 !important;
+  box-sizing: border-box !important;
+}
+
+.chat-assistant-input-container {
+  position: relative !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+.chat-assistant-input {
+  width: 100% !important;
+  min-height: 48px !important;
+  max-height: 120px !important;
+  padding: 12px 48px 12px 16px !important;
+  border: 1px solid #d0d7de !important;
+  border-radius: 12px !important;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif !important;
+  font-size: 14px !important;
+  line-height: 1.4 !important;
+  resize: none !important;
+  outline: none !important;
+  background: #f6f8fa !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1) !important;
+  transition: border-color 0.2s, box-shadow 0.2s, background-color 0.2s !important;
+  box-sizing: border-box !important;
+  color: #1a1a1a !important;
+  margin: 0 !important;
+  font-weight: normal !important;
+  text-decoration: none !important;
+  text-align: left !important;
+  vertical-align: top !important;
+}
+
+.chat-assistant-input:focus {
+  border-color: #0969da !important;
+  box-shadow: 0 0 0 3px rgba(9, 105, 218, 0.1), 0 1px 3px rgba(0, 0, 0, 0.1) !important;
+  background: #ffffff !important;
+}
+
+.chat-assistant-input::placeholder {
+  color: #656d76 !important;
+  opacity: 1 !important;
+}
+
+.chat-assistant-send-btn {
+  position: absolute !important;
+  right: 8px !important;
+  top: 50% !important;
+  transform: translateY(-50%) !important;
+  background: #0969da !important;
+  color: white !important;
+  border: none !important;
+  padding: 8px 12px !important;
+  border-radius: 8px !important;
+  cursor: pointer !important;
+  font-size: 12px !important;
+  font-weight: 500 !important;
+  transition: background-color 0.2s !important;
+  margin: 0 !important;
+  outline: none !important;
+  box-shadow: none !important;
+  text-decoration: none !important;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif !important;
+  line-height: 1.4 !important;
+}
+
+.chat-assistant-send-btn:hover {
+  background: #0860ca !important;
+}
+
+.chat-assistant-send-btn:disabled {
+  background: #8c959f !important;
+  cursor: not-allowed !important;
+}
+
+/* Message styles */
+.chat-assistant-message {
+  margin-bottom: 16px !important;
+  padding: 12px !important;
+  border-radius: 8px !important;
+  max-width: 85% !important;
+  word-wrap: break-word !important;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif !important;
+  font-size: 14px !important;
+  line-height: 1.4 !important;
+  margin-top: 0 !important;
+  margin-left: 0 !important;
+  margin-right: 0 !important;
+  border: none !important;
+  box-shadow: none !important;
+  position: relative !important;
+  display: block !important;
+  box-sizing: border-box !important;
+}
+
+.chat-assistant-message.user {
+  background: #0969da !important;
+  color: white !important;
+  margin-left: auto !important;
+  margin-right: 0 !important;
+}
+
+.chat-assistant-message.assistant {
+  background: #f6f8fa !important;
+  color: #1a1a1a !important;
+  margin-left: 0 !important;
+  margin-right: auto !important;
+}
+
+.chat-assistant-message-sender {
+  font-size: 12px !important;
+  font-weight: 600 !important;
+  margin-bottom: 4px !important;
+  opacity: 0.8 !important;
+  margin-top: 0 !important;
+  margin-left: 0 !important;
+  margin-right: 0 !important;
+  padding: 0 !important;
+  background: transparent !important;
+  border: none !important;
+  color: inherit !important;
+}
+
+.chat-assistant-message-content {
+  margin: 0 !important;
+  padding: 0 !important;
+  background: transparent !important;
+  border: none !important;
+  color: inherit !important;
+  font-family: inherit !important;
+  font-size: inherit !important;
+  line-height: inherit !important;
+  word-wrap: break-word !important;
+}
