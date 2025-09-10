@@ -6,6 +6,9 @@
   "permissions": [
     "activeTab"
   ],
+  "host_permissions": [
+    "https://api.groq.com/*"
+  ],
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
