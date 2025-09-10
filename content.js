@@ -334,7 +334,7 @@ function createBoundingBox(element, index, elementInfo) {
   
   // Add index label
   const label = document.createElement('div');
-  label.textContent = index + 1;
+  label.textContent = index;
   label.style.cssText = `
     position: absolute;
     top: -20px;

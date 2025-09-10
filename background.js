@@ -14,7 +14,12 @@ chrome.action.onClicked.addListener((tab) => {
 // Handle messages from content scripts
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === "callClaudeAPI") {
-    callGroqAPI(request.message, request.elements || [])
+    callGroqAPI(
+      request.message, 
+      request.elements || [], 
+      request.conversationHistory || [], 
+      request.model || 'meta-llama/llama-4-maverick-17b-128e-instruct'
+    )
       .then((response) => {
         sendResponse({ success: true, response });
       })
@@ -26,7 +31,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 });
 
-async function callGroqAPI(message, elements = []) {
+async function callGroqAPI(message, elements = [], conversationHistory = [], model = 'meta-llama/llama-4-maverick-17b-128e-instruct') {
   const API_KEY = "REMOVED_GROQ_KEY";
 
   if (!API_KEY || API_KEY === "your-groq-api-key-here") {
@@ -45,36 +50,80 @@ async function callGroqAPI(message, elements = []) {
     elementType: el.elementType
   }));
 
-  const systemPrompt = `You are a web automation assistant. The user will provide a request and you have access to interactive elements on the current page. 
+  const systemPrompt = `You are an autonomous web automation agent. You will be provided with task instructions and HTML DOM content. Your job is to analyze the current page state and determine the next action needed to complete the task.
 
-Available elements:
+TASK INSTRUCTIONS: Complete the user's request by clicking through the necessary elements step by step.
+
+Available DOM elements:
 ${elementsList.map(el => `${el.index}: ${el.tagName}${el.type ? `[${el.type}]` : ''} - "${el.title}" (${el.elementType})`).join('\n')}
 
-IMPORTANT: Only click on "interactive" elements (buttons, links, inputs, etc). Do NOT click on "content" elements (text, images, etc) as they are not clickable. Content elements are only shown for context.
+AGENT BEHAVIOR:
+- Analyze the current page and determine what needs to be clicked next to progress toward the goal
+- If you can identify the next logical step, click on the appropriate interactive element
+- Continue until the task is complete or no further progress is possible
+- Only click on "interactive" elements (buttons, links, inputs, etc), never "content" elements
 
-ALWAYS respond with valid JSON in this exact format:
+ABSOLUTE JSON OUTPUT REQUIREMENT:
+YOU MUST ALWAYS RESPOND WITH VALID JSON ONLY. NO TEXT BEFORE OR AFTER THE JSON. NO MARKDOWN. NO EXPLANATIONS OUTSIDE JSON.
 
-For click actions on interactive elements:
-{"action": "click", "elementIndex": <number>, "message": "<your explanation/response>"}
+EXACT JSON FORMAT REQUIRED:
 
-For non-click responses or when user asks to click content elements:
-{"action": "none", "message": "<your explanation/response>"}
+To continue working (click next element):
+{
+  "action": "click",
+  "elementIndex": <number>,
+  "message": "Your explanation, reasoning, or any text goes here"
+}
 
-Never include any text outside the JSON structure. Always include a "message" field with your response.`;
+When task is complete or no further action possible:
+{
+  "action": "none", 
+  "message": "Task completion status, reasoning, or any text goes here"
+}
+
+CRITICAL JSON RULES:
+- Your ENTIRE response must be valid JSON that can be parsed
+- NEVER write text outside the JSON structure
+- NEVER use markdown formatting around the JSON
+- ALL explanations, thoughts, reasoning must go in the "message" key
+- Use "action": "click" to continue, "action": "none" to stop
+- The "message" key is where ALL your text communication goes
+- Do not prefix with "Here's the JSON:" or any other text
+- Start your response directly with { and end with }
+
+INVALID EXAMPLES (DO NOT DO THIS):
+- "I need to click the button. {"action": "click"...}"
+- Using markdown code blocks around JSON
+- "Here is my response: {"action": "click"...}"
+
+VALID EXAMPLE:
+{"action": "click", "elementIndex": 5, "message": "I identified the login button and will click it to proceed with authentication"}`;
+
+  // Build messages array: system prompt first, then conversation history, then current user message
+  const messages = [
+    {
+      role: "system",
+      content: systemPrompt,
+    }
+  ];
+
+  // Add all conversation history except the last message (which should be the current user message)
+  if (conversationHistory.length > 0) {
+    // Add all but the last message from history (the last one is the current user message we just added)
+    const historyMessages = conversationHistory.slice(0, -1);
+    messages.push(...historyMessages);
+  }
+
+  // Always add the current user message at the end
+  messages.push({
+    role: "user",
+    content: message,
+  });
 
   const requestBody = {
-    model: "meta-llama/llama-4-maverick-17b-128e-instruct",
+    model: model,
     max_tokens: 1000,
-    messages: [
-      {
-        role: "system",
-        content: systemPrompt,
-      },
-      {
-        role: "user",
-        content: message,
-      },
-    ],
+    messages: messages,
   };
 
   console.log("=== GROQ API REQUEST DETAILS ===");
