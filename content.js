@@ -423,6 +423,60 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       sendResponse({ success: false, error: error.message });
     }
     return true; // Keep message channel open for async response
+  } else if (request.action === 'scrollX') {
+    try {
+      const amount = request.amount || 0;
+      window.scrollBy(amount, 0);
+      sendResponse({ success: true, message: `Scrolled horizontally by ${amount}px` });
+    } catch (error) {
+      sendResponse({ success: false, error: error.message });
+    }
+  } else if (request.action === 'scrollY') {
+    try {
+      const amount = request.amount || 0;
+      window.scrollBy(0, amount);
+      sendResponse({ success: true, message: `Scrolled vertically by ${amount}px` });
+    } catch (error) {
+      sendResponse({ success: false, error: error.message });
+    }
+  } else if (request.action === 'enterText') {
+    try {
+      const result = extractInteractiveElements();
+      const elements = result.elements;
+      
+      enterTextOnElement(request.elementIndex, request.text, elements)
+        .then(result => {
+          console.log('Enter text result:', result);
+          sendResponse(result);
+        })
+        .catch(error => {
+          console.error('Enter text error:', error);
+          sendResponse({ success: false, error: error.message });
+        });
+    } catch (error) {
+      console.error('Enter text setup error:', error);
+      sendResponse({ success: false, error: error.message });
+    }
+    return true; // Keep message channel open for async response
+  } else if (request.action === 'pressEnter') {
+    try {
+      const result = extractInteractiveElements();
+      const elements = result.elements;
+      
+      pressEnterOnElement(request.elementIndex, elements)
+        .then(result => {
+          console.log('Press Enter result:', result);
+          sendResponse(result);
+        })
+        .catch(error => {
+          console.error('Press Enter error:', error);
+          sendResponse({ success: false, error: error.message });
+        });
+    } catch (error) {
+      console.error('Press Enter setup error:', error);
+      sendResponse({ success: false, error: error.message });
+    }
+    return true; // Keep message channel open for async response
   } else if (request.action === 'showBoundingBoxes') {
     try {
       const result = showBoundingBoxes();
@@ -534,5 +588,180 @@ function executeClickOnElement(elementIndex, elements) {
     
   } catch (error) {
     return Promise.resolve({ success: false, error: `Click setup failed: ${error.message}` });
+  }
+}
+
+function enterTextOnElement(elementIndex, text, elements) {
+  if (elementIndex < 0 || elementIndex >= elements.length) {
+    return Promise.resolve({ success: false, error: `Invalid element index ${elementIndex}. Available indices: 0-${elements.length - 1}` });
+  }
+
+  const elementInfo = elements[elementIndex];
+  const domElement = elementInfo.domElement;
+  
+  if (!domElement) {
+    return Promise.resolve({ success: false, error: 'DOM element reference not found in extracted data' });
+  }
+  
+  if (!domElement.isConnected) {
+    return Promise.resolve({ success: false, error: 'Element is no longer in the document' });
+  }
+  
+  // Check if element can accept text input
+  const canAcceptText = domElement.tagName === 'INPUT' || 
+                       domElement.tagName === 'TEXTAREA' || 
+                       domElement.hasAttribute('contenteditable');
+  
+  if (!canAcceptText) {
+    return Promise.resolve({ success: false, error: `Element ${domElement.tagName} cannot accept text input` });
+  }
+  
+  console.log('Entering text on element:', {
+    index: elementIndex,
+    tagName: domElement.tagName,
+    text: text,
+    rect: domElement.getBoundingClientRect()
+  });
+  
+  try {
+    // Scroll element into view first
+    domElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    
+    return new Promise((resolve) => {
+      setTimeout(() => {
+        try {
+          // Focus the element first
+          domElement.focus();
+          
+          // Clear existing content if it's an input or textarea
+          if (domElement.tagName === 'INPUT' || domElement.tagName === 'TEXTAREA') {
+            domElement.value = '';
+            domElement.value = text;
+            
+            // Trigger input events
+            domElement.dispatchEvent(new Event('input', { bubbles: true }));
+            domElement.dispatchEvent(new Event('change', { bubbles: true }));
+          } else if (domElement.hasAttribute('contenteditable')) {
+            domElement.textContent = text;
+            
+            // Trigger input events for contenteditable
+            domElement.dispatchEvent(new Event('input', { bubbles: true }));
+          }
+          
+          // Simulate typing for more realistic behavior
+          text.split('').forEach((char, index) => {
+            setTimeout(() => {
+              const keyEvent = new KeyboardEvent('keydown', {
+                key: char,
+                bubbles: true,
+                cancelable: true
+              });
+              domElement.dispatchEvent(keyEvent);
+            }, index * 10);
+          });
+          
+          resolve({ success: true, message: `Successfully entered text "${text}" into ${elementInfo.title || elementInfo.tagName}` });
+          
+        } catch (error) {
+          console.error('Text entry failed:', error);
+          resolve({ success: false, error: `Text entry failed: ${error.message}` });
+        }
+      }, 300); // Wait for scroll to complete
+    });
+    
+  } catch (error) {
+    return Promise.resolve({ success: false, error: `Text entry setup failed: ${error.message}` });
+  }
+}
+
+function pressEnterOnElement(elementIndex, elements) {
+  if (elementIndex < 0 || elementIndex >= elements.length) {
+    return Promise.resolve({ success: false, error: `Invalid element index ${elementIndex}. Available indices: 0-${elements.length - 1}` });
+  }
+
+  const elementInfo = elements[elementIndex];
+  const domElement = elementInfo.domElement;
+  
+  if (!domElement) {
+    return Promise.resolve({ success: false, error: 'DOM element reference not found in extracted data' });
+  }
+  
+  if (!domElement.isConnected) {
+    return Promise.resolve({ success: false, error: 'Element is no longer in the document' });
+  }
+  
+  console.log('Pressing Enter on element:', {
+    index: elementIndex,
+    tagName: domElement.tagName,
+    rect: domElement.getBoundingClientRect()
+  });
+  
+  try {
+    // Scroll element into view first
+    domElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    
+    return new Promise((resolve) => {
+      setTimeout(() => {
+        try {
+          // Focus the element first
+          domElement.focus();
+          
+          // Create and dispatch Enter key events
+          const keyDownEvent = new KeyboardEvent('keydown', {
+            key: 'Enter',
+            code: 'Enter',
+            keyCode: 13,
+            which: 13,
+            bubbles: true,
+            cancelable: true
+          });
+          
+          const keyPressEvent = new KeyboardEvent('keypress', {
+            key: 'Enter',
+            code: 'Enter',
+            keyCode: 13,
+            which: 13,
+            bubbles: true,
+            cancelable: true
+          });
+          
+          const keyUpEvent = new KeyboardEvent('keyup', {
+            key: 'Enter',
+            code: 'Enter',
+            keyCode: 13,
+            which: 13,
+            bubbles: true,
+            cancelable: true
+          });
+          
+          // Dispatch all keyboard events in sequence
+          domElement.dispatchEvent(keyDownEvent);
+          domElement.dispatchEvent(keyPressEvent);
+          domElement.dispatchEvent(keyUpEvent);
+          
+          // For form elements, also try triggering submit on the parent form
+          if (domElement.tagName === 'INPUT' || domElement.tagName === 'TEXTAREA') {
+            const form = domElement.closest('form');
+            if (form) {
+              // Trigger form submit event
+              const submitEvent = new Event('submit', {
+                bubbles: true,
+                cancelable: true
+              });
+              form.dispatchEvent(submitEvent);
+            }
+          }
+          
+          resolve({ success: true, message: `Successfully pressed Enter on ${elementInfo.title || elementInfo.tagName}` });
+          
+        } catch (error) {
+          console.error('Press Enter failed:', error);
+          resolve({ success: false, error: `Press Enter failed: ${error.message}` });
+        }
+      }, 300); // Wait for scroll to complete
+    });
+    
+  } catch (error) {
+    return Promise.resolve({ success: false, error: `Press Enter setup failed: ${error.message}` });
   }
 }

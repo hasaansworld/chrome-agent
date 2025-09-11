@@ -179,7 +179,7 @@
           addMessage('system', `🎯 Agent completed task: ${jsonResponse.message}`);
           break;
         } else if (jsonResponse.action === 'click' && jsonResponse.elementIndex !== undefined) {
-          // Execute click in the tab (get fresh elements for clicking)
+          // Execute click in the tab
           const clickResult = await executeClickInTab(currentTabId, jsonResponse.elementIndex);
           
           if (clickResult.success) {
@@ -191,6 +191,118 @@
           
           // Wait for page updates after click
           await new Promise(resolve => setTimeout(resolve, 2000));
+          
+          addMessage('system', `⏭️ Continuing to next step...`);
+        } else if (jsonResponse.action === 'enterText' && jsonResponse.elementIndex !== undefined && jsonResponse.text !== undefined) {
+          // Execute text entry
+          const textResult = await enterTextInTab(currentTabId, jsonResponse.elementIndex, jsonResponse.text);
+          
+          if (textResult.success) {
+            addMessage('system', `✓ Entered text: ${textResult.message}`);
+          } else {
+            addMessage('system', `❌ Text entry failed: ${textResult.error}`);
+            break;
+          }
+          
+          // Wait for page updates after text entry
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          
+          addMessage('system', `⏭️ Continuing to next step...`);
+        } else if (jsonResponse.action === 'scrollX' && jsonResponse.amount !== undefined) {
+          // Execute horizontal scroll
+          const scrollResult = await scrollInTab(currentTabId, 'scrollX', jsonResponse.amount);
+          
+          if (scrollResult.success) {
+            addMessage('system', `✓ Scrolled horizontally: ${scrollResult.message}`);
+          } else {
+            addMessage('system', `❌ Scroll failed: ${scrollResult.error}`);
+            break;
+          }
+          
+          // Wait for scroll to complete
+          await new Promise(resolve => setTimeout(resolve, 500));
+          
+          addMessage('system', `⏭️ Continuing to next step...`);
+        } else if (jsonResponse.action === 'scrollY' && jsonResponse.amount !== undefined) {
+          // Execute vertical scroll
+          const scrollResult = await scrollInTab(currentTabId, 'scrollY', jsonResponse.amount);
+          
+          if (scrollResult.success) {
+            addMessage('system', `✓ Scrolled vertically: ${scrollResult.message}`);
+          } else {
+            addMessage('system', `❌ Scroll failed: ${scrollResult.error}`);
+            break;
+          }
+          
+          // Wait for scroll to complete
+          await new Promise(resolve => setTimeout(resolve, 500));
+          
+          addMessage('system', `⏭️ Continuing to next step...`);
+        } else if (jsonResponse.action === 'pressEnter' && jsonResponse.elementIndex !== undefined) {
+          // Execute press Enter
+          const enterResult = await pressEnterInTab(currentTabId, jsonResponse.elementIndex);
+          
+          if (enterResult.success) {
+            addMessage('system', `✓ Pressed Enter: ${enterResult.message}`);
+          } else {
+            addMessage('system', `❌ Press Enter failed: ${enterResult.error}`);
+            break;
+          }
+          
+          // Wait for page updates after pressing Enter (form submissions, etc.)
+          await new Promise(resolve => setTimeout(resolve, 2000));
+          
+          addMessage('system', `⏭️ Continuing to next step...`);
+        } else if (jsonResponse.action === 'openTab' && jsonResponse.url !== undefined) {
+          // Open new tab
+          const tabResult = await openNewTab(jsonResponse.url);
+          
+          if (tabResult.success) {
+            addMessage('system', `✓ Opened new tab: ${tabResult.message}`);
+            // Update current tab to the new one
+            currentTabId = tabResult.tabId;
+          } else {
+            addMessage('system', `❌ Failed to open tab: ${tabResult.error}`);
+            break;
+          }
+          
+          // Wait for new tab to load
+          await new Promise(resolve => setTimeout(resolve, 2000));
+          
+          addMessage('system', `⏭️ Continuing to next step...`);
+        } else if (jsonResponse.action === 'getTabList') {
+          // Get list of all tabs
+          const tabsResult = await getTabList();
+          
+          if (tabsResult.success) {
+            addMessage('system', `✓ Retrieved tab list: ${tabsResult.message}`);
+            // Add tabs info to conversation history for agent to see
+            conversationHistory.push({
+              role: 'user',
+              content: `Available tabs: ${JSON.stringify(tabsResult.tabs, null, 2)}`
+            });
+          } else {
+            addMessage('system', `❌ Failed to get tab list: ${tabsResult.error}`);
+            break;
+          }
+          
+          addMessage('system', `⏭️ Continuing to next step...`);
+        } else if (jsonResponse.action === 'switchTab' && jsonResponse.tabId !== undefined) {
+          // Switch to specified tab
+          const switchResult = await switchToTab(jsonResponse.tabId);
+          
+          if (switchResult.success) {
+            addMessage('system', `✓ Switched to tab: ${switchResult.message}`);
+            // Update current tab reference
+            currentTabId = jsonResponse.tabId;
+            await getCurrentTabInfo();
+          } else {
+            addMessage('system', `❌ Failed to switch tab: ${switchResult.error}`);
+            break;
+          }
+          
+          // Wait for tab switch to complete
+          await new Promise(resolve => setTimeout(resolve, 1000));
           
           addMessage('system', `⏭️ Continuing to next step...`);
         } else {
@@ -236,6 +348,108 @@
         }
       });
     });
+  }
+
+  async function enterTextInTab(tabId, elementIndex, text) {
+    return new Promise((resolve) => {
+      chrome.tabs.sendMessage(tabId, { 
+        action: 'enterText', 
+        elementIndex: elementIndex,
+        text: text
+      }, (response) => {
+        if (chrome.runtime.lastError) {
+          resolve({ success: false, error: chrome.runtime.lastError.message });
+        } else {
+          resolve(response || { success: false, error: 'No response' });
+        }
+      });
+    });
+  }
+
+  async function scrollInTab(tabId, action, amount) {
+    return new Promise((resolve) => {
+      chrome.tabs.sendMessage(tabId, { 
+        action: action, 
+        amount: amount
+      }, (response) => {
+        if (chrome.runtime.lastError) {
+          resolve({ success: false, error: chrome.runtime.lastError.message });
+        } else {
+          resolve(response || { success: false, error: 'No response' });
+        }
+      });
+    });
+  }
+
+  async function pressEnterInTab(tabId, elementIndex) {
+    return new Promise((resolve) => {
+      chrome.tabs.sendMessage(tabId, { 
+        action: 'pressEnter', 
+        elementIndex: elementIndex
+      }, (response) => {
+        if (chrome.runtime.lastError) {
+          resolve({ success: false, error: chrome.runtime.lastError.message });
+        } else {
+          resolve(response || { success: false, error: 'No response' });
+        }
+      });
+    });
+  }
+
+  async function openNewTab(url) {
+    try {
+      const tab = await chrome.tabs.create({ url: url, active: true });
+      return { 
+        success: true, 
+        message: `Opened tab with URL: ${url}`, 
+        tabId: tab.id 
+      };
+    } catch (error) {
+      return { 
+        success: false, 
+        error: `Failed to open tab: ${error.message}` 
+      };
+    }
+  }
+
+  async function getTabList() {
+    try {
+      const tabs = await chrome.tabs.query({});
+      const tabInfo = tabs.map(tab => ({
+        id: tab.id,
+        url: tab.url,
+        title: tab.title,
+        active: tab.active,
+        index: tab.index
+      }));
+      
+      return { 
+        success: true, 
+        message: `Found ${tabs.length} tabs`, 
+        tabs: tabInfo 
+      };
+    } catch (error) {
+      return { 
+        success: false, 
+        error: `Failed to get tab list: ${error.message}` 
+      };
+    }
+  }
+
+  async function switchToTab(tabId) {
+    try {
+      await chrome.tabs.update(tabId, { active: true });
+      const tab = await chrome.tabs.get(tabId);
+      return { 
+        success: true, 
+        message: `Switched to tab: ${tab.title || tab.url}` 
+      };
+    } catch (error) {
+      return { 
+        success: false, 
+        error: `Failed to switch to tab: ${error.message}` 
+      };
+    }
   }
 
   async function callGroqAPI(message, elements, conversationHistory, model) {

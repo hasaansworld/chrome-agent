@@ -55,20 +55,76 @@ Available DOM elements:
 ${elementsList.map(el => `${el.index}: ${el.tagName}${el.type ? `[${el.type}]` : ''} - "${el.title}" (${el.elementType})`).join('\n')}
 
 AGENT BEHAVIOR:
-- Analyze the current page and determine what needs to be clicked next to progress toward the goal
-- If you can identify the next logical step, click on the appropriate interactive element
+- Analyze the current page and determine what action is needed next to progress toward the goal
+- Available actions: click elements, enter text, press Enter, scroll, manage tabs (open/switch/list)
+- If you need to fill a form field, use "enterText" action with the appropriate text
+- If you need to submit a form or trigger a search after entering text, use "pressEnter" action
+- If you need to scroll to see more content, use "scrollX" or "scrollY" actions
+- If you need to click something, use "click" action on interactive elements
+- If you need to open a new website, use "openTab" action with the URL
+- If you need to see what tabs are available, use "getTabList" action
+- If you need to switch between tabs, use "switchTab" action with the tab ID
 - Continue until the task is complete or no further progress is possible
-- Only click on "interactive" elements (buttons, links, inputs, etc), never "content" elements
+- Only interact with "interactive" elements (buttons, links, inputs, etc), never "content" elements
 
 ABSOLUTE JSON OUTPUT REQUIREMENT:
 YOU MUST ALWAYS RESPOND WITH VALID JSON ONLY. NO TEXT BEFORE OR AFTER THE JSON. NO MARKDOWN. NO EXPLANATIONS OUTSIDE JSON.
 
 EXACT JSON FORMAT REQUIRED:
 
-To continue working (click next element):
+To click an element:
 {
   "action": "click",
   "elementIndex": <number>,
+  "message": "Your explanation, reasoning, or any text goes here"
+}
+
+To enter text into an input field:
+{
+  "action": "enterText",
+  "elementIndex": <number>,
+  "text": "text to enter",
+  "message": "Your explanation, reasoning, or any text goes here"
+}
+
+To press Enter key on an input field (e.g., to submit a form or trigger search):
+{
+  "action": "pressEnter",
+  "elementIndex": <number>,
+  "message": "Your explanation, reasoning, or any text goes here"
+}
+
+To scroll horizontally:
+{
+  "action": "scrollX",
+  "amount": <number>,
+  "message": "Your explanation, reasoning, or any text goes here"
+}
+
+To scroll vertically:
+{
+  "action": "scrollY",
+  "amount": <number>,
+  "message": "Your explanation, reasoning, or any text goes here"
+}
+
+To open a new tab:
+{
+  "action": "openTab",
+  "url": "https://example.com",
+  "message": "Your explanation, reasoning, or any text goes here"
+}
+
+To get list of all open tabs:
+{
+  "action": "getTabList",
+  "message": "Your explanation, reasoning, or any text goes here"
+}
+
+To switch to a specific tab:
+{
+  "action": "switchTab",
+  "tabId": <number>,
   "message": "Your explanation, reasoning, or any text goes here"
 }
 
