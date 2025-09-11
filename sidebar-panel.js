@@ -117,6 +117,8 @@
   async function runAutonomousAgent(initialMessage) {
     let stepCount = 0;
     const maxSteps = 10;
+    let lastActionExecuted = null;
+    let isVerificationStep = false;
     
     addMessage('system', `🤖 Starting autonomous agent for task: "${initialMessage}"`);
     
@@ -133,9 +135,28 @@
         }
 
         // Build context message for this step
-        const contextMessage = stepCount === 1 ? 
-          initialMessage : 
-          `Continue with the task: "${initialMessage}". You have already taken ${stepCount - 1} steps. Analyze the current page state and determine what to do next.`;
+        let contextMessage;
+        
+        if (isVerificationStep && lastActionExecuted) {
+          // This is a verification step
+          contextMessage = `VERIFICATION STEP: You just executed: ${JSON.stringify(lastActionExecuted)}. 
+          
+          Please verify if this action was successful by analyzing the current page state. 
+          
+          If the action was successful and you can see the expected changes, respond with:
+          {"action": "verified", "message": "Action was successful, explanation of what changed"}
+          
+          If the action failed or you don't see expected changes, respond with:
+          {"action": "retry", "message": "Action failed, explanation of what went wrong"}
+          
+          If the task is now complete, respond with:
+          {"action": "none", "message": "Task completed successfully"}`;
+        } else {
+          // This is a regular action step
+          contextMessage = stepCount === 1 ? 
+            initialMessage : 
+            `Continue with the task: "${initialMessage}". You have already taken ${Math.floor(stepCount / 2)} verified steps. Analyze the current page state and determine what to do next.`;
+        }
         
         // Add current user message to conversation history
         conversationHistory.push({
@@ -178,12 +199,33 @@
         if (jsonResponse.action === 'none') {
           addMessage('system', `🎯 Agent completed task: ${jsonResponse.message}`);
           break;
+        } else if (jsonResponse.action === 'verified') {
+          // Verification successful, continue to next action
+          addMessage('system', `✅ Verification successful: ${jsonResponse.message}`);
+          isVerificationStep = false;
+          lastActionExecuted = null;
+          addMessage('system', `⏭️ Proceeding to next action...`);
+          continue;
+        } else if (jsonResponse.action === 'retry') {
+          // Verification failed, retry the last action or continue with a different approach
+          addMessage('system', `⚠️ Action needs retry: ${jsonResponse.message}`);
+          isVerificationStep = false;
+          lastActionExecuted = null;
+          addMessage('system', `🔄 Trying different approach...`);
+          continue;
         } else if (jsonResponse.action === 'click' && jsonResponse.elementIndex !== undefined) {
           // Execute click in the tab
           const clickResult = await executeClickInTab(currentTabId, jsonResponse.elementIndex);
           
           if (clickResult.success) {
             addMessage('system', `✓ Clicked element: ${clickResult.message}`);
+            // Set up for verification step
+            lastActionExecuted = {
+              action: 'click',
+              elementIndex: jsonResponse.elementIndex,
+              expectedResult: jsonResponse.message
+            };
+            isVerificationStep = true;
           } else {
             addMessage('system', `❌ Click failed: ${clickResult.error}`);
             break;
@@ -192,13 +234,21 @@
           // Wait for page updates after click
           await new Promise(resolve => setTimeout(resolve, 2000));
           
-          addMessage('system', `⏭️ Continuing to next step...`);
+          addMessage('system', `🔍 Proceeding to verification step...`);
         } else if (jsonResponse.action === 'enterText' && jsonResponse.elementIndex !== undefined && jsonResponse.text !== undefined) {
           // Execute text entry
           const textResult = await enterTextInTab(currentTabId, jsonResponse.elementIndex, jsonResponse.text);
           
           if (textResult.success) {
             addMessage('system', `✓ Entered text: ${textResult.message}`);
+            // Set up for verification step
+            lastActionExecuted = {
+              action: 'enterText',
+              elementIndex: jsonResponse.elementIndex,
+              text: jsonResponse.text,
+              expectedResult: jsonResponse.message
+            };
+            isVerificationStep = true;
           } else {
             addMessage('system', `❌ Text entry failed: ${textResult.error}`);
             break;
@@ -207,13 +257,20 @@
           // Wait for page updates after text entry
           await new Promise(resolve => setTimeout(resolve, 1000));
           
-          addMessage('system', `⏭️ Continuing to next step...`);
+          addMessage('system', `🔍 Proceeding to verification step...`);
         } else if (jsonResponse.action === 'scrollX' && jsonResponse.amount !== undefined) {
           // Execute horizontal scroll
           const scrollResult = await scrollInTab(currentTabId, 'scrollX', jsonResponse.amount);
           
           if (scrollResult.success) {
             addMessage('system', `✓ Scrolled horizontally: ${scrollResult.message}`);
+            // Set up for verification step
+            lastActionExecuted = {
+              action: 'scrollX',
+              amount: jsonResponse.amount,
+              expectedResult: jsonResponse.message
+            };
+            isVerificationStep = true;
           } else {
             addMessage('system', `❌ Scroll failed: ${scrollResult.error}`);
             break;
@@ -222,13 +279,20 @@
           // Wait for scroll to complete
           await new Promise(resolve => setTimeout(resolve, 500));
           
-          addMessage('system', `⏭️ Continuing to next step...`);
+          addMessage('system', `🔍 Proceeding to verification step...`);
         } else if (jsonResponse.action === 'scrollY' && jsonResponse.amount !== undefined) {
           // Execute vertical scroll
           const scrollResult = await scrollInTab(currentTabId, 'scrollY', jsonResponse.amount);
           
           if (scrollResult.success) {
             addMessage('system', `✓ Scrolled vertically: ${scrollResult.message}`);
+            // Set up for verification step
+            lastActionExecuted = {
+              action: 'scrollY',
+              amount: jsonResponse.amount,
+              expectedResult: jsonResponse.message
+            };
+            isVerificationStep = true;
           } else {
             addMessage('system', `❌ Scroll failed: ${scrollResult.error}`);
             break;
@@ -237,13 +301,20 @@
           // Wait for scroll to complete
           await new Promise(resolve => setTimeout(resolve, 500));
           
-          addMessage('system', `⏭️ Continuing to next step...`);
+          addMessage('system', `🔍 Proceeding to verification step...`);
         } else if (jsonResponse.action === 'pressEnter' && jsonResponse.elementIndex !== undefined) {
           // Execute press Enter
           const enterResult = await pressEnterInTab(currentTabId, jsonResponse.elementIndex);
           
           if (enterResult.success) {
             addMessage('system', `✓ Pressed Enter: ${enterResult.message}`);
+            // Set up for verification step
+            lastActionExecuted = {
+              action: 'pressEnter',
+              elementIndex: jsonResponse.elementIndex,
+              expectedResult: jsonResponse.message
+            };
+            isVerificationStep = true;
           } else {
             addMessage('system', `❌ Press Enter failed: ${enterResult.error}`);
             break;
@@ -252,7 +323,7 @@
           // Wait for page updates after pressing Enter (form submissions, etc.)
           await new Promise(resolve => setTimeout(resolve, 2000));
           
-          addMessage('system', `⏭️ Continuing to next step...`);
+          addMessage('system', `🔍 Proceeding to verification step...`);
         } else if (jsonResponse.action === 'openTab' && jsonResponse.url !== undefined) {
           // Open new tab
           const tabResult = await openNewTab(jsonResponse.url);
@@ -261,6 +332,8 @@
             addMessage('system', `✓ Opened new tab: ${tabResult.message}`);
             // Update current tab to the new one
             currentTabId = tabResult.tabId;
+            // Tab actions are automatically verified since they either succeed or fail
+            addMessage('system', `✅ Tab opened successfully, continuing...`);
           } else {
             addMessage('system', `❌ Failed to open tab: ${tabResult.error}`);
             break;
@@ -268,25 +341,29 @@
           
           // Wait for new tab to load
           await new Promise(resolve => setTimeout(resolve, 2000));
-          
-          addMessage('system', `⏭️ Continuing to next step...`);
         } else if (jsonResponse.action === 'getTabList') {
           // Get list of all tabs
           const tabsResult = await getTabList();
           
           if (tabsResult.success) {
             addMessage('system', `✓ Retrieved tab list: ${tabsResult.message}`);
+            
+            // Create a clearer tab list for the agent
+            const tabListText = tabsResult.tabs.map(tab => 
+              `Tab ID ${tab.id}: ${tab.domain} - "${tab.title}" (${tab.active ? 'ACTIVE' : 'inactive'})`
+            ).join('\n');
+            
             // Add tabs info to conversation history for agent to see
             conversationHistory.push({
               role: 'user',
-              content: `Available tabs: ${JSON.stringify(tabsResult.tabs, null, 2)}`
+              content: `Available tabs:\n${tabListText}\n\nTo switch to a specific tab, use the exact Tab ID number from this list.`
             });
           } else {
             addMessage('system', `❌ Failed to get tab list: ${tabsResult.error}`);
             break;
           }
           
-          addMessage('system', `⏭️ Continuing to next step...`);
+          addMessage('system', `✅ Tab list retrieved successfully, continuing...`);
         } else if (jsonResponse.action === 'switchTab' && jsonResponse.tabId !== undefined) {
           // Switch to specified tab
           const switchResult = await switchToTab(jsonResponse.tabId);
@@ -296,6 +373,8 @@
             // Update current tab reference
             currentTabId = jsonResponse.tabId;
             await getCurrentTabInfo();
+            // Tab actions are automatically verified since they either succeed or fail
+            addMessage('system', `✅ Tab switched successfully, continuing...`);
           } else {
             addMessage('system', `❌ Failed to switch tab: ${switchResult.error}`);
             break;
@@ -303,8 +382,6 @@
           
           // Wait for tab switch to complete
           await new Promise(resolve => setTimeout(resolve, 1000));
-          
-          addMessage('system', `⏭️ Continuing to next step...`);
         } else {
           addMessage('system', `❌ Invalid response from agent, stopping`);
           break;
@@ -415,13 +492,28 @@
   async function getTabList() {
     try {
       const tabs = await chrome.tabs.query({});
-      const tabInfo = tabs.map(tab => ({
-        id: tab.id,
-        url: tab.url,
-        title: tab.title,
-        active: tab.active,
-        index: tab.index
-      }));
+      const tabInfo = tabs.map((tab, index) => {
+        // Extract domain from URL for clearer identification
+        let domain = 'unknown';
+        try {
+          domain = new URL(tab.url).hostname;
+        } catch (e) {
+          domain = tab.url || 'unknown';
+        }
+        
+        return {
+          id: tab.id,
+          url: tab.url,
+          title: tab.title,
+          domain: domain,
+          active: tab.active,
+          index: tab.index,
+          description: `${domain} - ${tab.title}`
+        };
+      });
+      
+      // Sort tabs by index to maintain consistent order
+      tabInfo.sort((a, b) => a.index - b.index);
       
       return { 
         success: true, 

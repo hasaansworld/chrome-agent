@@ -517,7 +517,9 @@ function executeClickOnElement(elementIndex, elements) {
     index: elementIndex,
     tagName: domElement.tagName,
     text: domElement.textContent?.substring(0, 50),
-    rect: domElement.getBoundingClientRect()
+    rect: domElement.getBoundingClientRect(),
+    classList: Array.from(domElement.classList),
+    role: domElement.getAttribute('role')
   });
   
   try {
@@ -533,48 +535,153 @@ function executeClickOnElement(elementIndex, elements) {
     return new Promise((resolve) => {
       setTimeout(() => {
         try {
-          // Method 1: Direct click
-          domElement.click();
+          let clickSuccessful = false;
           
-          // Method 2: Full mouse event sequence
-          const mouseEvents = ['mousedown', 'mouseup', 'click'];
-          mouseEvents.forEach(eventType => {
-            const event = new MouseEvent(eventType, {
-              view: window,
-              bubbles: true,
-              cancelable: true,
-              clientX: centerX,
-              clientY: centerY,
-              button: 0,
-              buttons: eventType === 'mousedown' ? 1 : 0
-            });
-            domElement.dispatchEvent(event);
+          // Method 1: Try to find and click a nested clickable element first
+          const clickableChild = findBestClickTarget(domElement);
+          if (clickableChild && clickableChild !== domElement) {
+            console.log('Found better click target:', clickableChild);
+            try {
+              clickableChild.click();
+              clickSuccessful = true;
+            } catch (e) {
+              console.log('Nested element click failed, trying parent');
+            }
+          }
+          
+          // Method 2: Enhanced direct click with focus
+          if (!clickSuccessful) {
+            try {
+              domElement.focus();
+              domElement.click();
+              clickSuccessful = true;
+            } catch (e) {
+              console.log('Direct click failed, trying event dispatch');
+            }
+          }
+          
+          // Method 3: Comprehensive mouse event sequence with more events
+          const mouseEventTypes = ['mouseover', 'mouseenter', 'mousedown', 'mouseup', 'click'];
+          mouseEventTypes.forEach((eventType, index) => {
+            setTimeout(() => {
+              const event = new MouseEvent(eventType, {
+                view: window,
+                bubbles: true,
+                cancelable: true,
+                clientX: centerX,
+                clientY: centerY,
+                button: 0,
+                buttons: eventType === 'mousedown' ? 1 : 0,
+                detail: eventType === 'click' ? 1 : 0
+              });
+              domElement.dispatchEvent(event);
+            }, index * 10);
           });
           
-          // Method 3: For buttons and button-like elements
-          if (domElement.tagName === 'BUTTON' || domElement.getAttribute('role') === 'button') {
-            domElement.focus();
+          // Method 4: Pointer events (for modern web apps)
+          const pointerEventTypes = ['pointerdown', 'pointerup'];
+          pointerEventTypes.forEach((eventType, index) => {
             setTimeout(() => {
-              // Try both Enter and Space
-              ['Enter', ' '].forEach(key => {
-                const keyEvent = new KeyboardEvent('keydown', {
-                  key: key,
-                  code: key === 'Enter' ? 'Enter' : 'Space',
+              const event = new PointerEvent(eventType, {
+                view: window,
+                bubbles: true,
+                cancelable: true,
+                clientX: centerX,
+                clientY: centerY,
+                button: 0,
+                buttons: eventType === 'pointerdown' ? 1 : 0,
+                pointerId: 1,
+                pointerType: 'mouse'
+              });
+              domElement.dispatchEvent(event);
+            }, 50 + index * 10);
+          });
+          
+          // Method 5: Touch events (for mobile-style interactions)
+          if (domElement.tagName === 'DIV' || domElement.getAttribute('role') === 'button') {
+            setTimeout(() => {
+              const touchEvent = new TouchEvent('touchstart', {
+                bubbles: true,
+                cancelable: true,
+                touches: [{
+                  clientX: centerX,
+                  clientY: centerY,
+                  target: domElement
+                }]
+              });
+              domElement.dispatchEvent(touchEvent);
+              
+              setTimeout(() => {
+                const touchEndEvent = new TouchEvent('touchend', {
                   bubbles: true,
                   cancelable: true
                 });
-                domElement.dispatchEvent(keyEvent);
-              });
-            }, 50);
+                domElement.dispatchEvent(touchEndEvent);
+              }, 50);
+            }, 100);
           }
           
-          // Method 4: Direct onclick handler for elements with onclick
+          // Method 6: For buttons and button-like elements with keyboard
+          if (domElement.tagName === 'BUTTON' || domElement.getAttribute('role') === 'button' || domElement.tagName === 'DIV') {
+            setTimeout(() => {
+              domElement.focus();
+              ['Enter', ' '].forEach((key, index) => {
+                setTimeout(() => {
+                  const keyDownEvent = new KeyboardEvent('keydown', {
+                    key: key,
+                    code: key === 'Enter' ? 'Enter' : 'Space',
+                    bubbles: true,
+                    cancelable: true
+                  });
+                  const keyUpEvent = new KeyboardEvent('keyup', {
+                    key: key,
+                    code: key === 'Enter' ? 'Enter' : 'Space',
+                    bubbles: true,
+                    cancelable: true
+                  });
+                  domElement.dispatchEvent(keyDownEvent);
+                  setTimeout(() => domElement.dispatchEvent(keyUpEvent), 50);
+                }, index * 100);
+              });
+            }, 150);
+          }
+          
+          // Method 7: Try clicking on parent elements if this is a nested structure
+          if (!clickSuccessful && domElement.tagName === 'DIV') {
+            setTimeout(() => {
+              let parent = domElement.parentElement;
+              let attempts = 0;
+              while (parent && attempts < 3) {
+                if (parent.onclick || parent.getAttribute('role') === 'button' || 
+                    parent.style.cursor === 'pointer' || parent.classList.contains('clickable')) {
+                  try {
+                    parent.click();
+                    console.log('Clicked parent element:', parent);
+                    break;
+                  } catch (e) {
+                    console.log('Parent click failed');
+                  }
+                }
+                parent = parent.parentElement;
+                attempts++;
+              }
+            }, 200);
+          }
+          
+          // Method 8: Direct onclick handler invocation
           if (domElement.onclick && typeof domElement.onclick === 'function') {
-            try {
-              domElement.onclick.call(domElement, new MouseEvent('click'));
-            } catch (onclickError) {
-              console.log('Direct onclick call failed:', onclickError);
-            }
+            setTimeout(() => {
+              try {
+                domElement.onclick.call(domElement, new MouseEvent('click', {
+                  bubbles: true,
+                  cancelable: true,
+                  clientX: centerX,
+                  clientY: centerY
+                }));
+              } catch (onclickError) {
+                console.log('Direct onclick call failed:', onclickError);
+              }
+            }, 250);
           }
           
           resolve({ success: true, message: `Successfully clicked: ${elementInfo.title || elementInfo.tagName}` });
@@ -589,6 +696,46 @@ function executeClickOnElement(elementIndex, elements) {
   } catch (error) {
     return Promise.resolve({ success: false, error: `Click setup failed: ${error.message}` });
   }
+}
+
+function findBestClickTarget(element) {
+  // Look for nested clickable elements that might be the actual target
+  const clickableSelectors = [
+    'button', 
+    'a[href]', 
+    '[role="button"]', 
+    '[onclick]',
+    '.btn', 
+    '.button',
+    '[data-testid*="button"]',
+    '[aria-label*="button"]',
+    '[class*="click"]',
+    '[class*="btn"]'
+  ];
+  
+  // First, try to find a direct child that's clickable
+  for (const selector of clickableSelectors) {
+    const child = element.querySelector(selector);
+    if (child) {
+      console.log('Found clickable child:', child);
+      return child;
+    }
+  }
+  
+  // If no direct clickable child, check if any child has click handlers
+  const children = element.querySelectorAll('*');
+  for (const child of children) {
+    if (child.onclick || 
+        child.style.cursor === 'pointer' || 
+        child.getAttribute('role') === 'button' ||
+        child.classList.toString().includes('click') ||
+        child.classList.toString().includes('btn')) {
+      console.log('Found child with click indicators:', child);
+      return child;
+    }
+  }
+  
+  return element; // Return original element if no better target found
 }
 
 function enterTextOnElement(elementIndex, text, elements) {
