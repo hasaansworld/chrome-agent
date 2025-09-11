@@ -118,18 +118,7 @@
   }
 
   function getActionDelay(action) {
-    switch (action) {
-      case "click":
-      case "pressEnter":
-        return 1000;
-      case "enterText":
-        return 500;
-      case "scrollX":
-      case "scrollY":
-        return 250;
-      default:
-        return 500;
-    }
+    return 0; // No delays between actions
   }
 
   async function executeAction(actionData, currentTabId) {
@@ -218,7 +207,7 @@
         if (tabResult.success) {
           addMessage("system", `✓ Opened new tab: ${tabResult.message}`);
           currentTabId = tabResult.tabId;
-          await new Promise((resolve) => setTimeout(resolve, 1000)); // Wait for tab to load
+          // No delay for tab loading
           return true;
         } else {
           addMessage("system", `❌ Failed to open tab: ${tabResult.error}`);
@@ -271,8 +260,7 @@
     modelSelector
   ) {
     try {
-      // Wait a bit more for DOM to fully update after the action
-      await new Promise((resolve) => setTimeout(resolve, 500));
+      // No delay for DOM updates
 
       // Get fresh elements after the action
       const elementsData = await getElementsFromTab(currentTabId);
@@ -406,38 +394,151 @@
   }
 
   async function runAutonomousAgent(initialMessage) {
+    addMessage("system", `🤖 Starting autonomous agent for: "${initialMessage}"`);
+
+    // Step 1: Break down the initial message into individual tasks
+    addMessage("system", "🔍 Breaking down the request into individual tasks...");
+    const tasks = await breakDownIntoTasks(initialMessage);
+    
+    if (!tasks || tasks.length === 0) {
+      addMessage("system", "❌ Could not break down the request into tasks");
+      return;
+    }
+
+    addMessage("system", `📋 Found ${tasks.length} tasks to execute:`);
+    tasks.forEach((task, index) => {
+      addMessage("system", `   ${index + 1}. ${task}`);
+    });
+
+    // Step 2: Execute each task sequentially
+    for (let i = 0; i < tasks.length; i++) {
+      const currentTask = tasks[i];
+      const taskNumber = i + 1;
+      
+      addMessage("system", `\n🎯 Starting Task ${taskNumber}/${tasks.length}: "${currentTask}"`);
+      
+      const taskCompleted = await executeIndividualTask(currentTask, taskNumber);
+      
+      if (taskCompleted) {
+        addMessage("system", `✅ Task ${taskNumber} completed successfully`);
+      } else {
+        addMessage("system", `⚠️ Task ${taskNumber} could not be completed, moving to next task`);
+      }
+      
+      // No delay between tasks
+    }
+
+    addMessage("system", "🎉 All tasks have been processed!");
+  }
+
+  async function breakDownIntoTasks(initialMessage) {
+    const taskBreakdownPrompt = `Break down this user request into individual, sequential tasks using VERY SPECIFIC action-oriented language.
+
+User request: "${initialMessage}"
+
+CRITICAL REQUIREMENTS:
+1. Use SPECIFIC action verbs that match available actions: "click", "enter text", "press enter", "scroll", "open new tab", "switch to tab"
+2. Include exact URLs when opening new websites
+3. Specify exact text to enter in fields
+4. Be granular - one clear action per task
+5. Use precise language that directly translates to executable actions
+
+Available actions you can specify:
+- "click on [specific element description]"  
+- "enter text '[exact text]' in [field description]"
+- "press enter in [field description]" 
+- "scroll down to see more content"
+- "open new tab with URL [exact URL]"
+- "switch to tab containing [domain/title]"
+- "get list of open tabs"
+
+Respond with JSON: {"tasks": ["task 1", "task 2", "task 3", ...]}
+
+Examples:
+Input: "create a calendar event for lunch tomorrow at 12pm"
+Output: {"tasks": ["open new tab with URL https://calendar.google.com", "click on create new event button", "enter text 'Lunch' in event title field", "click on date picker", "select tomorrow's date", "click on time field", "enter text '12:00 PM' in time field", "click save event button"]}
+
+Input: "search for restaurants on Google"
+Output: {"tasks": ["open new tab with URL https://google.com", "click on search box", "enter text 'restaurants near me' in search box", "press enter in search box"]}
+
+Input: "send an email to john@example.com saying hello"  
+Output: {"tasks": ["open new tab with URL https://gmail.com", "click compose new email button", "enter text 'john@example.com' in recipient field", "click in subject field", "enter text 'Hello' in subject field", "click in message body", "enter text 'Hello!' in message body", "click send button"]}`;
+
+    try {
+      const selectedModel = modelSelector.value;
+      const response = await callGroqAPI(taskBreakdownPrompt, [], [], selectedModel);
+      
+      let result;
+      try {
+        result = JSON.parse(response);
+      } catch (parseError) {
+        addMessage("system", "❌ Could not parse task breakdown response");
+        return null;
+      }
+      
+      return result.tasks || null;
+    } catch (error) {
+      addMessage("system", `❌ Error breaking down tasks: ${error.message}`);
+      return null;
+    }
+  }
+
+  async function executeIndividualTask(taskMessage, taskNumber) {
     let stepCount = 0;
-    const maxSteps = 20;
+    const maxSteps = 8; // Reduced steps per individual task to prevent loops
+    
+    // Track conversation for this individual task
+    const taskConversationHistory = [];
 
-    addMessage(
-      "system",
-      `🤖 Starting autonomous agent for task: "${initialMessage}"`
-    );
-
-    // Simple action loop with full chat context
     while (stepCount < maxSteps) {
       stepCount++;
       
+      // Force completion if we're at the last step
+      if (stepCount >= maxSteps) {
+        addMessage("system", `   ⚠️ Reached maximum steps (${maxSteps}), forcing task completion`);
+        return false;
+      }
+      
       try {
-        addMessage("system", `🔄 Step ${stepCount}: Getting page state and determining next action...`);
+        addMessage("system", `   Step ${stepCount}/${maxSteps}: Getting page state and determining next action...`);
         
         // Get fresh DOM elements
         const elementsData = await getElementsFromTab(currentTabId);
         if (!elementsData || !elementsData.data || !elementsData.data.elements) {
-          addMessage("system", "❌ Could not extract elements from the page");
-          break;
+          addMessage("system", "   ❌ Could not extract elements from the page");
+          return false;
         }
 
         // Clean user message for context
-        const userContextMessage = `Task: "${initialMessage}". Step ${stepCount}. What action should I take next?`;
+        const userContextMessage = `Task ${taskNumber}: "${taskMessage}". Step ${stepCount}. What action should I take next?`;
         
         // Full prompt for the API call
-        const fullPrompt = `Task: "${initialMessage}". Step ${stepCount}.
+        const fullPrompt = `Task: "${taskMessage}". Step ${stepCount} of ${maxSteps}.
 
-Look at the current page state and determine what action to take next to accomplish this task.
+Look at the current page state and determine what action to take next to accomplish this specific task.
 
-If the task is complete, use action "none".
-Otherwise, choose the most appropriate action to continue progress.
+STEP LIMIT WARNING: You are on step ${stepCount} of ${maxSteps} maximum steps. If you're approaching the limit, prioritize completion over perfection.
+
+CRITICAL TASK COMPLETION RULES:
+Use "action": "none" when:
+- The specific task appears to be completed
+- You've made reasonable attempts and no further obvious actions are available  
+- You're on step ${stepCount >= maxSteps - 1 ? maxSteps - 1 : stepCount} or higher (approaching the limit)
+
+Task completion criteria:
+1. The expected outcome is visible in the page OR reasonable attempts have been made
+2. Forms have been submitted OR text has been entered as requested  
+3. Navigation has occurred OR the requested action has been attempted
+4. If you've tried multiple approaches and nothing seems to work, it's okay to complete the task
+
+IMPORTANT: Don't get stuck in infinite loops. After 3-5 reasonable attempts, consider the task done.
+
+SEARCH QUERY SUBMISSION RULE:
+ALWAYS use "pressEnter" action after entering text into search boxes or input fields to submit the search. Never rely on clicking search buttons - always use the Enter key.
+
+If no clear next action is available, use "action": "none" to complete the task.
+
+Otherwise, choose the most appropriate action to continue progress on this task.
 
 Respond with JSON using one of these formats:
 
@@ -448,17 +549,19 @@ Scroll: {"action": "scrollY", "amount": 300, "message": "explanation"}
 Open tab: {"action": "openTab", "url": "https://example.com", "message": "explanation"}
 Switch tab: {"action": "switchTab", "tabId": 123, "message": "explanation"}
 Get tabs: {"action": "getTabList", "message": "explanation"}
-Task complete: {"action": "none", "message": "task completed successfully"}`;
+Task complete (ONLY if 100% certain): {"action": "none", "message": "task completed successfully - [describe what you can see that proves completion]"}`;
 
         addMessage("user", userContextMessage);
-        conversationHistory.push({ role: "user", content: userContextMessage });
+        
+        // Add user message to task conversation history
+        taskConversationHistory.push({ role: "user", content: userContextMessage });
 
-        // Get model response with full chat context
+        // Get model response with task conversation history and screenshot
         const selectedModel = modelSelector.value;
         const response = await callGroqAPI(
           fullPrompt,
           elementsData.data.elements,
-          conversationHistory,
+          taskConversationHistory, // Include task conversation history
           selectedModel
         );
 
@@ -466,23 +569,24 @@ Task complete: {"action": "none", "message": "task completed successfully"}`;
         try {
           jsonResponse = JSON.parse(response);
         } catch (parseError) {
-          addMessage("system", `❌ Invalid JSON response: ${response.substring(0, 200)}...`);
+          addMessage("system", `   ❌ Invalid JSON response: ${response.substring(0, 200)}...`);
           continue;
         }
 
-        conversationHistory.push({ role: "assistant", content: response });
+        // Add assistant response to task conversation history
+        taskConversationHistory.push({ role: "assistant", content: response });
         addMessage("assistant", jsonResponse.message || "Taking action...");
 
         // Check if task is complete
         if (jsonResponse.action === "none") {
-          addMessage("system", `🎉 Task completed: ${jsonResponse.message}`);
-          break;
+          addMessage("system", `   🎉 Task completed: ${jsonResponse.message}`);
+          return true;
         }
 
         // Execute the action
         const actionSuccess = await executeAction(jsonResponse, currentTabId);
         
-        // Add detailed action result to chat context for agent memory
+        // Add detailed action result to task context
         let actionResultMessage;
         if (actionSuccess) {
           actionResultMessage = `✅ Successfully executed ${jsonResponse.action}`;
@@ -499,10 +603,8 @@ Task complete: {"action": "none", "message": "task completed successfully"}`;
           }
           actionResultMessage += `. ${jsonResponse.message}`;
           
-          addMessage("system", "✅ Action completed successfully");
-          // Wait for page updates
-          addMessage("system", "🕰️ Waiting for page updates...");
-          await new Promise(resolve => setTimeout(resolve, getActionDelay(jsonResponse.action)));
+          addMessage("system", "   ✅ Action completed successfully");
+          // No delay for page updates
         } else {
           actionResultMessage = `❌ Failed to execute ${jsonResponse.action}`;
           if (jsonResponse.action === "click") {
@@ -512,22 +614,24 @@ Task complete: {"action": "none", "message": "task completed successfully"}`;
           }
           actionResultMessage += `. Action failed - will try different approach.`;
           
-          addMessage("system", "❌ Action failed, will try different approach in next step");
+          addMessage("system", "   ❌ Action failed, will try different approach in next step");
         }
         
-        // Add the detailed result to conversation history so the agent remembers what happened
-        conversationHistory.push({ role: "system", content: actionResultMessage });
+        // No conversation history tracking needed
 
       } catch (error) {
-        console.error("Agent step error:", error);
-        addMessage("system", `❌ Step error: ${error.message}`);
-        break;
+        console.error("Task execution error:", error);
+        addMessage("system", `   ❌ Step error: ${error.message}`);
+        return false;
       }
     }
 
     if (stepCount >= maxSteps) {
-      addMessage("system", `⚠️ Agent reached maximum steps (${maxSteps}), stopping for safety`);
+      addMessage("system", `   ⚠️ Task reached maximum steps (${maxSteps}), considering incomplete`);
+      return false;
     }
+
+    return false;
   }
 
   async function executeActionStep(
@@ -618,11 +722,7 @@ Task complete: {"action": "none", "message": "task completed successfully"}`;
         return;
       }
 
-      // Wait for page updates
-      addMessage("system", "🕰️ Waiting for page updates...");
-      await new Promise((resolve) =>
-        setTimeout(resolve, getActionDelay(jsonResponse.action))
-      );
+      // No delay for page updates
 
       // Now call verification step
       await executeVerificationStep(
@@ -1079,19 +1179,46 @@ If failed: {"action":"retry","result":"the [action] did not occur, retry"}`;
     }
   }
 
-  async function callGroqAPIWithRetry(
+  async function captureScreenshot() {
+    return new Promise((resolve) => {
+      addMessage("system", "📸 Capturing screenshot...");
+      chrome.runtime.sendMessage(
+        { action: "captureScreenshot" },
+        (response) => {
+          if (chrome.runtime.lastError) {
+            console.error("Error capturing screenshot:", chrome.runtime.lastError);
+            addMessage("system", "❌ Screenshot capture failed: " + chrome.runtime.lastError.message);
+            resolve(null);
+          } else if (response.success) {
+            addMessage("system", "✅ Screenshot captured successfully");
+            resolve(response.screenshot);
+          } else {
+            console.error("Screenshot capture failed:", response.error);
+            addMessage("system", "❌ Screenshot capture failed: " + response.error);
+            resolve(null);
+          }
+        }
+      );
+    });
+  }
+
+  async function callOpenAIAPIWithRetry(
     message,
     elements,
     conversationHistory,
     model
   ) {
     try {
+      // Capture screenshot before API call
+      const screenshot = await captureScreenshot();
+      
       // First attempt
-      return await callGroqAPISingle(
+      return await callOpenAIAPISingle(
         message,
         elements,
         conversationHistory,
-        model
+        model,
+        screenshot
       );
     } catch (error) {
       // Check if it's a 500 error that should be retried
@@ -1105,12 +1232,16 @@ If failed: {"action":"retry","result":"the [action] did not occur, retry"}`;
         await new Promise((resolve) => setTimeout(resolve, 1000)); // Wait 1 second
 
         try {
+          // Capture fresh screenshot for retry
+          const screenshot = await captureScreenshot();
+          
           // Second attempt
-          return await callGroqAPISingle(
+          return await callOpenAIAPISingle(
             message,
             elements,
             conversationHistory,
-            model
+            model,
+            screenshot
           );
         } catch (retryError) {
           // If second attempt also fails, give up
@@ -1123,11 +1254,12 @@ If failed: {"action":"retry","result":"the [action] did not occur, retry"}`;
     }
   }
 
-  async function callGroqAPISingle(
+  async function callOpenAIAPISingle(
     message,
     elements,
     conversationHistory,
-    model
+    model,
+    screenshot
   ) {
     return new Promise((resolve, reject) => {
       chrome.runtime.sendMessage(
@@ -1137,6 +1269,7 @@ If failed: {"action":"retry","result":"the [action] did not occur, retry"}`;
           elements: elements,
           conversationHistory: conversationHistory,
           model: model,
+          screenshot: screenshot,
         },
         (response) => {
           if (chrome.runtime.lastError) {
@@ -1153,7 +1286,7 @@ If failed: {"action":"retry","result":"the [action] did not occur, retry"}`;
 
   // Backward compatibility alias
   async function callGroqAPI(message, elements, conversationHistory, model) {
-    return callGroqAPIWithRetry(message, elements, conversationHistory, model);
+    return callOpenAIAPIWithRetry(message, elements, conversationHistory, model);
   }
 
   function addMessage(sender, content) {

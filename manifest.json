@@ -5,10 +5,11 @@
   "description": "AI Chat Assistant sidebar",
   "permissions": [
     "activeTab",
-    "sidePanel"
+    "sidePanel",
+    "tabs"
   ],
   "host_permissions": [
-    "https://api.groq.com/*"
+    "https://api.openai.com/*"
   ],
   "content_scripts": [
     {

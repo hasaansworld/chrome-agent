@@ -11,31 +11,62 @@ chrome.action.onClicked.addListener(async (tab) => {
 // Handle messages from content scripts
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === "callClaudeAPI") {
-    callGroqAPI(
+    callOpenAIAPI(
       request.message, 
       request.elements || [], 
       request.conversationHistory || [], 
-      request.model || 'meta-llama/llama-4-maverick-17b-128e-instruct'
+      request.model || 'gpt-4o-2024-11-20',
+      request.screenshot || null
     )
       .then((response) => {
         sendResponse({ success: true, response });
       })
       .catch((error) => {
-        console.error("Error calling Groq API:", error);
+        console.error("Error calling OpenAI API:", error);
+        sendResponse({ success: false, error: error.message });
+      });
+    return true; // Keep the message channel open for async response
+  } else if (request.action === "captureScreenshot") {
+    captureTabScreenshot(sender.tab.id)
+      .then((screenshot) => {
+        sendResponse({ success: true, screenshot });
+      })
+      .catch((error) => {
+        console.error("Error capturing screenshot:", error);
         sendResponse({ success: false, error: error.message });
       });
     return true; // Keep the message channel open for async response
   }
 });
 
-async function callGroqAPI(message, elements = [], conversationHistory = [], model = 'meta-llama/llama-4-maverick-17b-128e-instruct') {
-  const API_KEY = "REMOVED_GROQ_KEY";
+async function captureTabScreenshot(tabId) {
+  try {
+    const screenshot = await chrome.tabs.captureVisibleTab(null, {
+      format: 'png',
+      quality: 90
+    });
+    return screenshot;
+  } catch (error) {
+    console.error("Error capturing screenshot:", error);
+    throw error;
+  }
+}
 
-  if (!API_KEY || API_KEY === "your-groq-api-key-here") {
+async function callOpenAIAPI(message, elements = [], conversationHistory = [], model = 'gpt-4o-2024-11-20', screenshot = null) {
+  // Read API key from environment - Note: In Chrome extension, you would need to read from storage or inject it
+  const API_KEY = "REMOVED_OPENAI_KEY";
+
+  if (!API_KEY || API_KEY === "your-openai-api-key-here") {
     throw new Error(
-      "Please configure your Groq API key in the extension code."
+      "Please configure your OpenAI API key in the extension code."
     );
   }
+
+  console.log("=== OPENAI API CALL DEBUG ===");
+  console.log("Screenshot provided:", screenshot ? "YES (" + screenshot.substring(0, 50) + "...)" : "NO");
+  console.log("Elements count:", elements.length);
+  console.log("Conversation history length:", conversationHistory.length);
+  console.log("Model:", model);
 
   // Create simplified element list for the prompt
   const elementsList = elements.map((el, index) => ({
@@ -47,7 +78,7 @@ async function callGroqAPI(message, elements = [], conversationHistory = [], mod
     elementType: el.elementType
   }));
 
-  const systemPrompt = `You are an autonomous web automation agent. You will be provided with task instructions and HTML DOM content. Your job is to analyze the current page state and determine the next action needed to complete the task.
+  const systemPrompt = `You are an autonomous web automation agent. You will be provided with task instructions, HTML DOM content, and a screenshot of the current page state. Your job is to analyze the current page state and determine the next action needed to complete the task.
 
 TASK INSTRUCTIONS: Complete the user's request by clicking through the necessary elements step by step.
 
@@ -55,6 +86,8 @@ Available DOM elements:
 ${elementsList.map(el => `${el.index}: ${el.tagName}${el.type ? `[${el.type}]` : ''} - "${el.title}" (${el.elementType})`).join('\n')}
 
 AGENT BEHAVIOR:
+- You are provided with both DOM elements and a screenshot of the current page state
+- Use the screenshot to understand the visual layout and current state of the page
 - Analyze the current page and determine what action is needed next to progress toward the goal
 - Available actions: click elements, enter text, press Enter, scroll, manage tabs (open/switch/list)
 - If you need to fill a form field, use "enterText" action with the appropriate text
@@ -67,6 +100,7 @@ AGENT BEHAVIOR:
 - If you need to switch between tabs, use "switchTab" action with the EXACT tab ID from the tab list
 - When switching tabs, carefully match the domain and title to find the correct tab ID
 - Example: if you want Google Sheets, look for "docs.google.com" domain, not "youtube.com"
+- IMPORTANT: Use the screenshot to understand the visual context and identify elements that may not be clearly described in the DOM
 - IMPORTANT: If you cannot see relevant content or actions fail, try multiple alternative strategies:
   * Scroll down/up to reveal more content that might be hidden
   * Look for navigation menus, search boxes, or alternative paths to reach your goal
@@ -197,11 +231,34 @@ VALID EXAMPLE:
     messages.push(...historyMessages);
   }
 
-  // Always add the current user message at the end
-  messages.push({
+  // Create user message with text and screenshot
+  const userMessage = {
     role: "user",
-    content: message,
+    content: []
+  };
+
+  // Add text content
+  userMessage.content.push({
+    type: "text",
+    text: message
   });
+
+  // Add screenshot if available
+  if (screenshot) {
+    userMessage.content.push({
+      type: "image_url",
+      image_url: {
+        url: screenshot
+      }
+    });
+  }
+
+  // If no screenshot, convert to simple text message
+  if (!screenshot) {
+    userMessage.content = message;
+  }
+
+  messages.push(userMessage);
 
   const requestBody = {
     model: model,
@@ -209,13 +266,13 @@ VALID EXAMPLE:
     messages: messages,
   };
 
-  console.log("=== GROQ API REQUEST DETAILS ===");
-  console.log("URL:", "https://api.groq.com/openai/v1/chat/completions");
+  console.log("=== OPENAI API REQUEST DETAILS ===");
+  console.log("URL:", "https://api.openai.com/v1/chat/completions");
   console.log("API Key (first 10 chars):", API_KEY.substring(0, 10) + "...");
   console.log("Request Body:", JSON.stringify(requestBody, null, 2));
-  console.log("=================================");
+  console.log("===================================");
 
-  const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+  const response = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
