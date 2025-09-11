@@ -525,7 +525,7 @@
     }
   }
 
-  async function getElementsFromTab(tabId) {
+  async function getElementsFromTab(tabId, retryCount = 0) {
     return new Promise((resolve) => {
       chrome.tabs.sendMessage(
         tabId,
@@ -533,9 +533,47 @@
         (response) => {
           if (chrome.runtime.lastError) {
             console.error("Error getting elements:", chrome.runtime.lastError);
-            resolve(null);
+            
+            // If first attempt failed, wait and retry once
+            if (retryCount === 0) {
+              console.log("Content script not found, retrying in 3 seconds...");
+              addMessageToChat("system", "⏳ Content script not loaded, retrying in 3 seconds...");
+              
+              setTimeout(async () => {
+                const retryResult = await getElementsFromTab(tabId, 1);
+                resolve(retryResult);
+              }, 3000);
+            } else {
+              console.error("Retry also failed");
+              addMessageToChat("system", "❌ Could not connect to page content after retry. Please reload the page.");
+              resolve(null);
+            }
           } else {
-            resolve(response);
+            // Check if we got valid elements
+            if (response && response.data && response.data.elements && response.data.elements.length > 0) {
+              if (retryCount > 0) {
+                addMessageToChat("system", `✅ Successfully found ${response.data.elements.length} elements on retry!`);
+              }
+              resolve(response);
+            } else if (!response || !response.data || !response.data.elements) {
+              // Got invalid response, retry once if haven't already
+              if (retryCount === 0) {
+                console.log("Got invalid response, retrying in 2 seconds...");
+                addMessageToChat("system", "⏳ Page might still be loading, retrying in 2 seconds...");
+                
+                setTimeout(async () => {
+                  const retryResult = await getElementsFromTab(tabId, 1);
+                  resolve(retryResult);
+                }, 2000);
+              } else {
+                console.log("No valid elements found after retry");
+                addMessageToChat("system", "⚠️ No interactive elements found on this page");
+                resolve(response); // Return whatever we got
+              }
+            } else {
+              // Got valid response with 0 elements
+              resolve(response);
+            }
           }
         }
       );

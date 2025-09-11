@@ -268,9 +268,36 @@ function isInteractiveElementFast(element) {
     return true;
   }
   
+  // Check for spreadsheet cells and input fields (enhanced detection)
+  if (isSpreadsheetOrInputElement(element)) {
+    return true;
+  }
+  
   // Role check (less common)
   const role = element.getAttribute('role');
-  if (role && ['button', 'link', 'menuitem', 'tab', 'checkbox', 'radio'].includes(role)) {
+  if (role && ['button', 'link', 'menuitem', 'tab', 'checkbox', 'radio', 'textbox', 'gridcell', 'cell'].includes(role)) {
+    return true;
+  }
+  
+  return false;
+}
+
+// Enhanced detection for spreadsheet cells and input fields
+function isSpreadsheetOrInputElement(element) {
+  const classList = element.classList.toString().toLowerCase();
+  const role = element.getAttribute('role');
+  
+  // Spreadsheet patterns
+  if (classList.includes('cell') || classList.includes('grid') || 
+      element.getAttribute('data-cell') || 
+      (element.tagName === 'TD' && element.getAttribute('tabindex'))) {
+    return true;
+  }
+  
+  // Input-like elements
+  if (classList.includes('input') || classList.includes('field') || 
+      classList.includes('textbox') || classList.includes('editable') ||
+      role === 'textbox' || role === 'gridcell' || role === 'cell') {
     return true;
   }
   
