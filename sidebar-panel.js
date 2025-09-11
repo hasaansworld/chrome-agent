@@ -118,423 +118,433 @@
     }
   }
 
+  function getActionDelay(action) {
+    switch (action) {
+      case "click":
+      case "pressEnter":
+        return 2000;
+      case "enterText":
+        return 1000;
+      case "scrollX":
+      case "scrollY":
+        return 500;
+      default:
+        return 1000;
+    }
+  }
+
+  async function executeAction(actionData, currentTabId) {
+    try {
+      if (actionData.action === "click" && actionData.elementIndex !== undefined) {
+        const result = await executeClickInTab(currentTabId, actionData.elementIndex);
+        if (result.success) {
+          addMessage("system", `✓ Clicked element: ${result.message}`);
+          return true;
+        } else {
+          addMessage("system", `❌ Click failed: ${result.error}`);
+          return false;
+        }
+      } else if (actionData.action === "enterText" && actionData.elementIndex !== undefined && actionData.text) {
+        const result = await enterTextInTab(currentTabId, actionData.elementIndex, actionData.text);
+        if (result.success) {
+          addMessage("system", `✓ Entered text: ${result.message}`);
+          return true;
+        } else {
+          addMessage("system", `❌ Text entry failed: ${result.error}`);
+          return false;
+        }
+      } else if (actionData.action === "scrollY" && actionData.amount !== undefined) {
+        const result = await scrollInTab(currentTabId, "scrollY", actionData.amount);
+        if (result.success) {
+          addMessage("system", `✓ Scrolled vertically: ${result.message}`);
+          return true;
+        } else {
+          addMessage("system", `❌ Scroll failed: ${result.error}`);
+          return false;
+        }
+      } else if (actionData.action === "scrollX" && actionData.amount !== undefined) {
+        const result = await scrollInTab(currentTabId, "scrollX", actionData.amount);
+        if (result.success) {
+          addMessage("system", `✓ Scrolled horizontally: ${result.message}`);
+          return true;
+        } else {
+          addMessage("system", `❌ Scroll failed: ${result.error}`);
+          return false;
+        }
+      } else if (actionData.action === "pressEnter" && actionData.elementIndex !== undefined) {
+        const result = await pressEnterInTab(currentTabId, actionData.elementIndex);
+        if (result.success) {
+          addMessage("system", `✓ Pressed Enter: ${result.message}`);
+          return true;
+        } else {
+          addMessage("system", `❌ Press Enter failed: ${result.error}`);
+          return false;
+        }
+      } else if (actionData.action === "openTab" && actionData.url) {
+        const tabResult = await openNewTab(actionData.url);
+        if (tabResult.success) {
+          addMessage("system", `✓ Opened new tab: ${tabResult.message}`);
+          currentTabId = tabResult.tabId;
+          await new Promise(resolve => setTimeout(resolve, 2000)); // Wait for tab to load
+          return true;
+        } else {
+          addMessage("system", `❌ Failed to open tab: ${tabResult.error}`);
+          return false;
+        }
+      } else if (actionData.action === "switchTab" && actionData.tabId) {
+        const switchResult = await switchToTab(actionData.tabId);
+        if (switchResult.success) {
+          addMessage("system", `✓ Switched to tab: ${switchResult.message}`);
+          currentTabId = actionData.tabId;
+          await getCurrentTabInfo();
+          return true;
+        } else {
+          addMessage("system", `❌ Failed to switch tab: ${switchResult.error}`);
+          return false;
+        }
+      } else if (actionData.action === "getTabList") {
+        const tabs = await getAllTabs();
+        if (tabs.success) {
+          addMessage("system", `✓ Retrieved tab list:\n${tabs.tabList.map(tab => `${tab.id}: ${tab.title} (${tab.url})`).join('\n')}`);
+          return true;
+        } else {
+          addMessage("system", `❌ Failed to get tab list: ${tabs.error}`);
+          return false;
+        }
+      } else {
+        addMessage("system", `❌ Invalid action: ${JSON.stringify(actionData)}`);
+        return false;
+      }
+    } catch (error) {
+      addMessage("system", `❌ Action execution error: ${error.message}`);
+      return false;
+    }
+  }
+
+  async function performVerification(actionExecuted, currentTabId, modelSelector) {
+    try {
+      // Wait a bit more for DOM to fully update after the action
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
+      // Get fresh elements after the action
+      const elementsData = await getElementsFromTab(currentTabId);
+      
+      if (!elementsData || !elementsData.data || !elementsData.data.elements) {
+        return { success: false, error: "Could not extract elements for verification" };
+      }
+
+      const verificationPrompt = `VERIFICATION STEP: You just executed: ${JSON.stringify(
+        actionExecuted
+      )}. 
+
+      IMPORTANT: Look ONLY at the current DOM elements to verify if the action worked. Ignore any previous expectations or assumptions.
+      
+      For CLICK actions, check if:
+      - New elements appeared (modals, pages, forms, buttons, content)
+      - Page navigation occurred (URL changed, new page loaded)
+      - UI state changed (buttons enabled/disabled, content updated)
+      - Error messages appeared
+      
+      For TEXT ENTRY actions, check if:
+      - The text actually appears in the target input field
+      - Form validation messages appeared
+      - Auto-complete or suggestions showed up
+      
+      For SCROLL actions, check if:
+      - New content became visible
+      - Page position changed as expected
+      - Loading indicators appeared for dynamic content
+      
+      For PRESS ENTER actions, check if:
+      - Form was submitted or search was executed
+      - New page loaded or content appeared
+      - Navigation occurred
+      
+      Based on what you can observe in the current DOM, respond with:
+      - {"action": "verified", "message": "Action successful because..."} if it worked
+      - {"action": "retry", "message": "Action failed because..."} if it failed
+      
+      DO NOT assume success - only verify based on actual observable changes in the DOM.`;
+
+      addMessage("system", "🔍 Verifying the action result...");
+      
+      const selectedModel = modelSelector.value;
+      let response;
+      try {
+        response = await callGroqAPI(
+          verificationPrompt,
+          elementsData.data.elements,
+          [], // No conversation history for verification to avoid bias
+          selectedModel
+        );
+      } catch (error) {
+        return { success: false, error: `Verification API Error: ${error.message}` };
+      }
+
+      let verificationResponse;
+      try {
+        verificationResponse = JSON.parse(response);
+      } catch (parseError) {
+        return { success: false, error: `Could not parse verification response: ${response}` };
+      }
+
+      if (!verificationResponse.message) {
+        return { success: false, error: "Verification response missing required message field" };
+      }
+
+      const displayMessage = Array.isArray(verificationResponse.message)
+        ? verificationResponse.message.join("\n")
+        : verificationResponse.message;
+        
+      addMessage("assistant", displayMessage);
+
+      if (verificationResponse.action === "verified") {
+        addMessage("system", `✅ Verification successful: ${verificationResponse.message}`);
+        return { success: true, verified: true, message: verificationResponse.message };
+      } else if (verificationResponse.action === "retry") {
+        addMessage("system", `⚠️ Action needs retry: ${verificationResponse.message}`);
+        return { success: true, verified: false, message: verificationResponse.message };
+      } else {
+        return { success: false, error: "Invalid verification response. Expected 'verified' or 'retry' action." };
+      }
+      
+    } catch (error) {
+      return { success: false, error: `Verification error: ${error.message}` };
+    }
+  }
+
   async function runAutonomousAgent(initialMessage) {
     let stepCount = 0;
     const maxSteps = 20;
-    let lastActionExecuted = null;
-    let isVerificationStep = false;
 
-    addMessage(
-      "system",
-      `🤖 Starting autonomous agent for task: "${initialMessage}"`
-    );
+    addMessage("system", `🤖 Starting autonomous agent for task: "${initialMessage}"`); 
 
-    while (stepCount < maxSteps) {
-      stepCount++;
+    // Start with the first action step
+    await executeActionStep(initialMessage, stepCount, maxSteps);
+  }
 
-      try {
-        // Get fresh elements from the current tab
-        const elementsData = await getElementsFromTab(currentTabId);
-
-        if (
-          !elementsData ||
-          !elementsData.data ||
-          !elementsData.data.elements
-        ) {
-          addMessage("system", "❌ Could not extract elements from the page");
-          break;
-        }
-
-        // Build context message for this step
-        let contextMessage;
-
-        if (isVerificationStep && lastActionExecuted) {
-          // This is a verification step
-          contextMessage = `VERIFICATION STEP: You just executed: ${JSON.stringify(
-            lastActionExecuted
-          )}. 
-
-          IMPORTANT: Look ONLY at the current DOM elements to verify if the action worked. Ignore any previous expectations or assumptions.
-          
-          For CLICK actions, check if:
-          - New elements appeared (modals, pages, forms, buttons, content)
-          - Page navigation occurred (URL changed, new page loaded)
-          - UI state changed (buttons enabled/disabled, content updated)
-          - Error messages appeared
-          
-          For TEXT ENTRY actions, check if:
-          - The text actually appears in the target input field
-          - Form validation messages appeared
-          - Auto-complete or suggestions showed up
-          
-          For SCROLL actions, check if:
-          - New content is now visible that wasn't before
-          - Page position actually changed
-          
-          Be HONEST about what you observe in the DOM:
-          
-          If you see clear evidence the action worked:
-          {"action": "verified", "message": "Specific evidence: [describe exactly what changed in the DOM]"}
-          
-          If you don't see expected changes or the action clearly failed:
-          {"action": "retry", "message": "No changes observed: [describe what you expected vs what you see]"}
-          
-          If the overall task is complete based on what you see:
-          {"action": "none", "message": "Task completed: [describe the final state you can see]"}`;
-        } else {
-          // This is a regular action step
-          contextMessage =
-            stepCount === 1
-              ? initialMessage
-              : `Continue with the task: "${initialMessage}". You have already taken ${Math.floor(
-                  stepCount / 2
-                )} verified steps. Analyze the current page state and determine what to do next.`;
-        }
-
-        // Add current user message to conversation history
-        conversationHistory.push({
-          role: "user",
-          content: contextMessage,
-        });
-
-        // Get selected model
-        const selectedModel = modelSelector.value;
-
-        // Call LLM with current state
-        // For verification steps, don't include conversation history to avoid bias
-        const historyForThisStep = isVerificationStep
-          ? []
-          : conversationHistory;
-        const response = await callGroqAPI(
-          contextMessage,
-          elementsData.data.elements,
-          historyForThisStep,
-          selectedModel
-        );
-
-        // Parse response
-        let jsonResponse;
-        try {
-          jsonResponse = JSON.parse(response);
-        } catch (parseError) {
-          addMessage(
-            "system",
-            `❌ Invalid JSON response: ${response.substring(0, 200)}...`
-          );
-          break;
-        }
-
-        // Add to conversation history
-        conversationHistory.push({
-          role: "assistant",
-          content: response,
-        });
-
-        // Display response
-        let displayMessage = `Step ${stepCount}: ${JSON.stringify(
-          jsonResponse,
-          null,
-          2
-        )}`;
-
-        if (
-          jsonResponse.elementIndex !== undefined &&
-          elementsData.data.elements[jsonResponse.elementIndex]
-        ) {
-          const element = elementsData.data.elements[jsonResponse.elementIndex];
-          displayMessage += `\n\nElement Details:\n- Type: ${element.tagName}${
-            element.type ? `[${element.type}]` : ""
-          }\n- Content: "${element.title}"\n- Element Type: ${
-            element.elementType
-          }`;
-        }
-
-        addMessage("assistant", displayMessage);
-
-        // Check if we should continue
-        if (jsonResponse.action === "none") {
-          addMessage(
-            "system",
-            `🎯 Agent completed task: ${jsonResponse.message}`
-          );
-          break;
-        } else if (jsonResponse.action === "verified") {
-          // Verification successful, continue to next action
-          addMessage(
-            "system",
-            `✅ Verification successful: ${jsonResponse.message}`
-          );
-          isVerificationStep = false;
-          lastActionExecuted = null;
-          addMessage("system", `⏭️ Proceeding to next action...`);
-          continue;
-        } else if (jsonResponse.action === "retry") {
-          // Verification failed, retry the last action or continue with a different approach
-          addMessage(
-            "system",
-            `⚠️ Action needs retry: ${jsonResponse.message}`
-          );
-          isVerificationStep = false;
-          lastActionExecuted = null;
-          addMessage("system", `🔄 Trying different approach...`);
-          continue;
-        } else if (
-          jsonResponse.action === "click" &&
-          jsonResponse.elementIndex !== undefined
-        ) {
-          // Execute click in the tab
-          const clickResult = await executeClickInTab(
-            currentTabId,
-            jsonResponse.elementIndex
-          );
-
-          if (clickResult.success) {
-            addMessage("system", `✓ Clicked element: ${clickResult.message}`);
-            // Set up for verification step
-            lastActionExecuted = {
-              action: "click",
-              elementIndex: jsonResponse.elementIndex,
-              expectedResult: jsonResponse.message,
-            };
-            isVerificationStep = true;
-          } else {
-            addMessage("system", `❌ Click failed: ${clickResult.error}`);
-            break;
-          }
-
-          // Wait for page updates after click
-          await new Promise((resolve) => setTimeout(resolve, 2000));
-
-          // Additional delay before verification
-          await new Promise((resolve) => setTimeout(resolve, 1000));
-          addMessage("system", `🔍 Proceeding to verification step...`);
-        } else if (
-          jsonResponse.action === "enterText" &&
-          jsonResponse.elementIndex !== undefined &&
-          jsonResponse.text !== undefined
-        ) {
-          // Execute text entry
-          const textResult = await enterTextInTab(
-            currentTabId,
-            jsonResponse.elementIndex,
-            jsonResponse.text
-          );
-
-          if (textResult.success) {
-            addMessage("system", `✓ Entered text: ${textResult.message}`);
-            // Set up for verification step
-            lastActionExecuted = {
-              action: "enterText",
-              elementIndex: jsonResponse.elementIndex,
-              text: jsonResponse.text,
-              expectedResult: jsonResponse.message,
-            };
-            isVerificationStep = true;
-          } else {
-            addMessage("system", `❌ Text entry failed: ${textResult.error}`);
-            break;
-          }
-
-          // Wait for page updates after text entry
-          await new Promise((resolve) => setTimeout(resolve, 1000));
-
-          // Additional delay before verification
-          await new Promise((resolve) => setTimeout(resolve, 1000));
-          addMessage("system", `🔍 Proceeding to verification step...`);
-        } else if (
-          jsonResponse.action === "scrollX" &&
-          jsonResponse.amount !== undefined
-        ) {
-          // Execute horizontal scroll
-          const scrollResult = await scrollInTab(
-            currentTabId,
-            "scrollX",
-            jsonResponse.amount
-          );
-
-          if (scrollResult.success) {
-            addMessage(
-              "system",
-              `✓ Scrolled horizontally: ${scrollResult.message}`
-            );
-            // Set up for verification step
-            lastActionExecuted = {
-              action: "scrollX",
-              amount: jsonResponse.amount,
-              expectedResult: jsonResponse.message,
-            };
-            isVerificationStep = true;
-          } else {
-            addMessage("system", `❌ Scroll failed: ${scrollResult.error}`);
-            break;
-          }
-
-          // Wait for scroll to complete
-          await new Promise((resolve) => setTimeout(resolve, 500));
-
-          // Additional delay before verification
-          await new Promise((resolve) => setTimeout(resolve, 1000));
-          addMessage("system", `🔍 Proceeding to verification step...`);
-        } else if (
-          jsonResponse.action === "scrollY" &&
-          jsonResponse.amount !== undefined
-        ) {
-          // Execute vertical scroll
-          const scrollResult = await scrollInTab(
-            currentTabId,
-            "scrollY",
-            jsonResponse.amount
-          );
-
-          if (scrollResult.success) {
-            addMessage(
-              "system",
-              `✓ Scrolled vertically: ${scrollResult.message}`
-            );
-            // Set up for verification step
-            lastActionExecuted = {
-              action: "scrollY",
-              amount: jsonResponse.amount,
-              expectedResult: jsonResponse.message,
-            };
-            isVerificationStep = true;
-          } else {
-            addMessage("system", `❌ Scroll failed: ${scrollResult.error}`);
-            break;
-          }
-
-          // Wait for scroll to complete
-          await new Promise((resolve) => setTimeout(resolve, 500));
-
-          // Additional delay before verification
-          await new Promise((resolve) => setTimeout(resolve, 1000));
-          addMessage("system", `🔍 Proceeding to verification step...`);
-        } else if (
-          jsonResponse.action === "pressEnter" &&
-          jsonResponse.elementIndex !== undefined
-        ) {
-          // Execute press Enter
-          const enterResult = await pressEnterInTab(
-            currentTabId,
-            jsonResponse.elementIndex
-          );
-
-          if (enterResult.success) {
-            addMessage("system", `✓ Pressed Enter: ${enterResult.message}`);
-            // Set up for verification step
-            lastActionExecuted = {
-              action: "pressEnter",
-              elementIndex: jsonResponse.elementIndex,
-              expectedResult: jsonResponse.message,
-            };
-            isVerificationStep = true;
-          } else {
-            addMessage("system", `❌ Press Enter failed: ${enterResult.error}`);
-            break;
-          }
-
-          // Wait for page updates after pressing Enter (form submissions, etc.)
-          await new Promise((resolve) => setTimeout(resolve, 2000));
-
-          // Additional delay before verification
-          await new Promise((resolve) => setTimeout(resolve, 1000));
-          addMessage("system", `🔍 Proceeding to verification step...`);
-        } else if (
-          jsonResponse.action === "openTab" &&
-          jsonResponse.url !== undefined
-        ) {
-          // Open new tab
-          const tabResult = await openNewTab(jsonResponse.url);
-
-          if (tabResult.success) {
-            addMessage("system", `✓ Opened new tab: ${tabResult.message}`);
-            // Update current tab to the new one
-            currentTabId = tabResult.tabId;
-            // Tab actions are automatically verified since they either succeed or fail
-            addMessage("system", `✅ Tab opened successfully, continuing...`);
-          } else {
-            addMessage("system", `❌ Failed to open tab: ${tabResult.error}`);
-            break;
-          }
-
-          // Wait for new tab to load
-          await new Promise((resolve) => setTimeout(resolve, 2000));
-        } else if (jsonResponse.action === "getTabList") {
-          // Get list of all tabs
-          const tabsResult = await getTabList();
-
-          if (tabsResult.success) {
-            addMessage("system", `✓ Retrieved tab list: ${tabsResult.message}`);
-
-            // Create a clearer tab list for the agent
-            const tabListText = tabsResult.tabs
-              .map(
-                (tab) =>
-                  `Tab ID ${tab.id}: ${tab.domain} - "${tab.title}" (${
-                    tab.active ? "ACTIVE" : "inactive"
-                  })`
-              )
-              .join("\n");
-
-            // Add tabs info to conversation history for agent to see
-            conversationHistory.push({
-              role: "user",
-              content: `Available tabs:\n${tabListText}\n\nTo switch to a specific tab, use the exact Tab ID number from this list.`,
-            });
-          } else {
-            addMessage(
-              "system",
-              `❌ Failed to get tab list: ${tabsResult.error}`
-            );
-            break;
-          }
-
-          addMessage(
-            "system",
-            `✅ Tab list retrieved successfully, continuing...`
-          );
-        } else if (
-          jsonResponse.action === "switchTab" &&
-          jsonResponse.tabId !== undefined
-        ) {
-          // Switch to specified tab
-          const switchResult = await switchToTab(jsonResponse.tabId);
-
-          if (switchResult.success) {
-            addMessage("system", `✓ Switched to tab: ${switchResult.message}`);
-            // Update current tab reference
-            currentTabId = jsonResponse.tabId;
-            await getCurrentTabInfo();
-            // Tab actions are automatically verified since they either succeed or fail
-            addMessage("system", `✅ Tab switched successfully, continuing...`);
-          } else {
-            addMessage(
-              "system",
-              `❌ Failed to switch tab: ${switchResult.error}`
-            );
-            break;
-          }
-
-          // Wait for tab switch to complete
-          await new Promise((resolve) => setTimeout(resolve, 1000));
-        } else {
-          addMessage("system", `❌ Invalid response from agent, stopping`);
-          break;
-        }
-      } catch (error) {
-        console.error("Agent step failed:", error);
-        addMessage("system", `❌ Agent error: ${error.message}`);
-        break;
-      }
+  async function executeActionStep(taskMessage, stepCount, maxSteps, lastActionResult = null) {
+    if (stepCount >= maxSteps) {
+      addMessage("system", `⚠️ Agent reached maximum steps (${maxSteps}), stopping for safety`);
+      return;
     }
 
-    if (stepCount >= maxSteps) {
-      addMessage(
-        "system",
-        `⚠️ Agent reached maximum steps (${maxSteps}), stopping for safety`
+    stepCount++;
+
+    try {
+      // ALWAYS get fresh DOM before any action
+      addMessage("system", "🔄 Getting fresh page state for action...");
+      const elementsData = await getElementsFromTab(currentTabId);
+
+      if (!elementsData || !elementsData.data || !elementsData.data.elements) {
+        addMessage("system", "❌ Could not extract elements from the page");
+        return;
+      }
+
+      // Build context message for action step
+      let contextMessage;
+      if (stepCount === 1) {
+        contextMessage = `Task: ${taskMessage}. Analyze the current page state and determine what to do first.`;
+      } else if (lastActionResult && lastActionResult !== "retry" && typeof lastActionResult === "string") {
+        // This is guidance from verification about what to do next
+        contextMessage = `Task: ${taskMessage}. Based on verification, the next step should be: ${lastActionResult}. Analyze the current page state and determine the appropriate action to accomplish this.`;
+      } else if (lastActionResult === "retry") {
+        contextMessage = `Task: ${taskMessage}. The previous action verification failed. Analyze the current page state and try a different approach.`;
+      } else {
+        contextMessage = `Continue with task: ${taskMessage}. You have completed ${Math.floor((stepCount - 1) / 2)} verified actions. Analyze the current page state and determine what to do next.`;
+      }
+
+      addMessage("user", contextMessage);
+      conversationHistory.push({ role: "user", content: contextMessage });
+
+      const selectedModel = modelSelector.value;
+      const response = await callGroqAPI(
+        contextMessage,
+        elementsData.data.elements,
+        conversationHistory,
+        selectedModel
       );
+
+      let jsonResponse;
+      try {
+        jsonResponse = JSON.parse(response);
+      } catch (parseError) {
+        addMessage("system", `❌ Invalid JSON response: ${response.substring(0, 200)}...`);
+        return;
+      }
+
+      conversationHistory.push({ role: "assistant", content: response });
+      addMessage("assistant", jsonResponse.message || "No message provided");
+
+      // Handle the action
+      if (jsonResponse.action === "none") {
+        addMessage("system", `🎯 Task completed: ${jsonResponse.message}`);
+        return;
+      }
+
+      // Execute the action
+      const actionSuccess = await executeAction(jsonResponse, currentTabId);
+      if (!actionSuccess) {
+        addMessage("system", "❌ Action execution failed, trying different approach");
+        // Retry with same step count (don't increment)
+        await executeActionStep(taskMessage, stepCount - 1, maxSteps, "retry");
+        return;
+      }
+
+      // Wait for page updates
+      addMessage("system", "🕰️ Waiting for page updates...");
+      await new Promise(resolve => setTimeout(resolve, getActionDelay(jsonResponse.action)));
+
+      // Now call verification step
+      await executeVerificationStep(taskMessage, stepCount, maxSteps, jsonResponse);
+
+    } catch (error) {
+      console.error("Action step failed:", error);
+      addMessage("system", `❌ Agent error: ${error.message}`);
+      return;
     }
   }
+
+  async function executeVerificationStep(taskMessage, stepCount, maxSteps, lastAction) {
+    try {
+      // ALWAYS get fresh DOM before verification
+      addMessage("system", "🔄 Getting fresh page state for verification...");
+      const elementsData = await getElementsFromTab(currentTabId);
+
+      if (!elementsData || !elementsData.data || !elementsData.data.elements) {
+        addMessage("system", "❌ Could not extract elements for verification");
+        return;
+      }
+
+      // Build verification context message
+      const contextMessage = `THIS IS A VERIFICATION STEP - DO NOT SUGGEST NEW ACTIONS TO EXECUTE.
+
+You just executed: ${JSON.stringify(lastAction)}
+
+Your job is to VERIFY if that action worked by looking at the current DOM elements.
+
+VERIFICATION ONLY - RESPOND WITH ONE OF THESE TWO FORMATS:
+
+If the previous action succeeded:
+{"action": "verified", "result": "action succeeded, now do [describe next step]"}
+
+If the previous action failed:
+{"action": "retry", "result": "the [action] did not occur, retry"}
+
+EXAMPLES:
+Success: {"action": "verified", "result": "action succeeded, now do click the create new event button"}
+
+Failure: {"action": "retry", "result": "the navigation did not occur, retry"}
+
+DO NOT use "click", "enterText", "elementIndex" - this is verification only.`;
+
+      conversationHistory.push({ role: "user", content: contextMessage });
+
+      const selectedModel = modelSelector.value;
+      const response = await callGroqAPI(
+        contextMessage,
+        elementsData.data.elements,
+        conversationHistory,
+        selectedModel
+      );
+
+      let jsonResponse;
+      try {
+        // Check if response looks like truncated JSON
+        if (response.includes('{"action"') && !response.trim().endsWith('}')) {
+          addMessage("system", `⚠️ JSON response appears truncated: ${response}`);
+          addMessage("system", `🔄 Retrying verification with shorter prompt...`);
+          
+          // Retry with a much shorter, focused verification prompt
+          const shortPrompt = `Verify if the last action worked. Respond with valid JSON only:
+          
+If successful: {"action":"verified","result":"action succeeded, now do [next step]"}
+If failed: {"action":"retry","result":"the [action] did not occur, retry"}`;
+
+          const retryResponse = await callGroqAPI(
+            shortPrompt,
+            elementsData.data.elements,
+            [], // No conversation history to keep it short
+            selectedModel
+          );
+          
+          jsonResponse = JSON.parse(retryResponse);
+        } else {
+          jsonResponse = JSON.parse(response);
+        }
+      } catch (parseError) {
+        addMessage("system", `❌ Invalid verification JSON response. Expected valid JSON but got: ${response.substring(0, 300)}...`);
+        addMessage("system", `Parse error: ${parseError.message}`);
+        addMessage("system", `🔄 Attempting fallback verification...`);
+        
+        // Fallback: assume retry and continue with a generic message
+        jsonResponse = {
+          action: "retry",
+          result: "the verification did not occur, retry"
+        };
+      }
+
+      // Check if model returned action format instead of verification format
+      if (jsonResponse.elementIndex !== undefined || jsonResponse.text !== undefined || 
+          (jsonResponse.action && !["verified", "retry"].includes(jsonResponse.action))) {
+        addMessage("system", `❌ Model returned action format instead of verification format: ${JSON.stringify(jsonResponse)}`);
+        addMessage("system", `🔄 This is a verification step, not an action step. Assuming retry...`);
+        
+        // Convert to proper verification format
+        jsonResponse = {
+          action: "retry",
+          result: "the verification did not occur, retry"
+        };
+      }
+
+      // Validate the JSON structure
+      if (!jsonResponse.action || !jsonResponse.result) {
+        addMessage("system", `❌ Invalid verification JSON structure. Missing required fields: ${JSON.stringify(jsonResponse)}`);
+        return;
+      }
+
+      if (jsonResponse.action !== "verified" && jsonResponse.action !== "retry") {
+        addMessage("system", `❌ Invalid verification action: "${jsonResponse.action}". Must be "verified" or "retry"`);
+        return;
+      }
+
+      conversationHistory.push({ role: "assistant", content: response });
+      addMessage("assistant", jsonResponse.result || "No verification result provided");
+
+      // Handle verification result
+      if (jsonResponse.action === "verified") {
+        addMessage("system", `✅ Verification passed`);
+        
+        // Continue to next action step with guidance from verification
+        if (jsonResponse.result) {
+          if (jsonResponse.result.toLowerCase().includes("task completed") || jsonResponse.result.toLowerCase().includes("no further action")) {
+            addMessage("system", `🎯 Task completed: ${jsonResponse.result}`);
+          } else {
+            // Call next action step with guidance message
+            await executeActionStep(taskMessage, stepCount, maxSteps, jsonResponse.result);
+          }
+        } else {
+          addMessage("system", `🎯 Task completed: No further actions needed`);
+        }
+      } else if (jsonResponse.action === "retry") {
+        addMessage("system", `⚠️ Verification failed`);
+        
+        // Try with suggested retry approach
+        if (jsonResponse.result) {
+          await executeActionStep(taskMessage, stepCount - 1, maxSteps, jsonResponse.result);
+        } else {
+          addMessage("system", "❌ No retry approach suggested, stopping");
+        }
+      } else {
+        addMessage("system", "❌ Invalid verification response");
+      }
+
+    } catch (error) {
+      console.error("Verification step failed:", error);
+      addMessage("system", `❌ Verification error: ${error.message}`);
+    }
+  }
+
 
   async function getElementsFromTab(tabId, retryCount = 0) {
     return new Promise((resolve) => {
@@ -751,7 +761,35 @@
     }
   }
 
-  async function callGroqAPI(message, elements, conversationHistory, model) {
+  async function callGroqAPIWithRetry(message, elements, conversationHistory, model) {
+    try {
+      // First attempt
+      return await callGroqAPISingle(message, elements, conversationHistory, model);
+    } catch (error) {
+      // Check if it's a 500 error that should be retried
+      const is500Error = error.message.includes('500') || 
+                        error.message.includes('Internal Server Error') ||
+                        error.message.includes('internal_server_error');
+      
+      if (is500Error) {
+        addMessage("system", `🔄 API Error 500. Retrying once...`);
+        await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second
+        
+        try {
+          // Second attempt
+          return await callGroqAPISingle(message, elements, conversationHistory, model);
+        } catch (retryError) {
+          // If second attempt also fails, give up
+          throw retryError;
+        }
+      }
+      
+      // If not a 500 error, throw immediately
+      throw error;
+    }
+  }
+
+  async function callGroqAPISingle(message, elements, conversationHistory, model) {
     return new Promise((resolve, reject) => {
       chrome.runtime.sendMessage(
         {
@@ -772,6 +810,11 @@
         }
       );
     });
+  }
+
+  // Backward compatibility alias
+  async function callGroqAPI(message, elements, conversationHistory, model) {
+    return callGroqAPIWithRetry(message, elements, conversationHistory, model);
   }
 
   function addMessage(sender, content) {
