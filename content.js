@@ -352,6 +352,70 @@ function createBoundingBox(element, index, elementInfo) {
   return box;
 }
 
+function createClickHighlight(element, elementIndex) {
+  const rect = element.getBoundingClientRect();
+  const highlight = document.createElement('div');
+  
+  // Distinctive styling for click highlights - orange/amber color to stand out
+  highlight.style.cssText = `
+    position: fixed;
+    left: ${rect.left}px;
+    top: ${rect.top}px;
+    width: ${rect.width}px;
+    height: ${rect.height}px;
+    border: 3px solid #FF6B00;
+    background: rgba(255, 107, 0, 0.2);
+    pointer-events: none;
+    box-sizing: border-box;
+    z-index: 2147483647;
+    animation: clickHighlightPulse 2s ease-in-out;
+  `;
+  
+  // Add distinctive "CLICK" label
+  const label = document.createElement('div');
+  label.textContent = 'CLICK';
+  label.style.cssText = `
+    position: absolute;
+    top: -25px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #FF6B00;
+    color: white;
+    padding: 3px 8px;
+    font-size: 11px;
+    font-weight: bold;
+    border-radius: 4px;
+    font-family: Arial, sans-serif;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+  `;
+  
+  // Add CSS animation for the highlight
+  const style = document.createElement('style');
+  style.textContent = `
+    @keyframes clickHighlightPulse {
+      0% { border-width: 3px; background: rgba(255, 107, 0, 0.2); }
+      50% { border-width: 4px; background: rgba(255, 107, 0, 0.4); }
+      100% { border-width: 3px; background: rgba(255, 107, 0, 0.1); }
+    }
+  `;
+  
+  highlight.appendChild(label);
+  document.head.appendChild(style);
+  document.body.appendChild(highlight);
+  
+  // Auto-remove the highlight after 3 seconds
+  setTimeout(() => {
+    if (highlight.parentNode) {
+      highlight.parentNode.removeChild(highlight);
+    }
+    if (style.parentNode) {
+      style.parentNode.removeChild(style);
+    }
+  }, 3000);
+  
+  return highlight;
+}
+
 
 function showBoundingBoxes() {
   clearBoundingBoxes();
@@ -526,6 +590,9 @@ function executeClickOnElement(elementIndex, elements) {
     // Scroll element into view first
     domElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
     
+    // Create a highlight bounding box for the element being clicked
+    const highlightBox = createClickHighlight(domElement, elementIndex);
+    
     // Get element position for mouse events
     const rect = domElement.getBoundingClientRect();
     const centerX = rect.left + rect.width / 2;
@@ -535,35 +602,25 @@ function executeClickOnElement(elementIndex, elements) {
     return new Promise((resolve) => {
       setTimeout(() => {
         try {
-          let clickSuccessful = false;
-          
           // Method 1: Try to find and click a nested clickable element first
           const clickableChild = findBestClickTarget(domElement);
           if (clickableChild && clickableChild !== domElement) {
-            console.log('Found better click target:', clickableChild);
+            console.log('Method 1: Found better click target, clicking nested element');
             try {
               clickableChild.click();
-              clickSuccessful = true;
             } catch (e) {
-              console.log('Nested element click failed, trying parent');
+              console.log('Nested element click failed, trying main element');
             }
           }
           
-          // Method 2: Enhanced direct click with focus
-          if (!clickSuccessful) {
-            try {
-              domElement.focus();
-              domElement.click();
-              clickSuccessful = true;
-            } catch (e) {
-              console.log('Direct click failed, trying event dispatch');
-            }
-          }
+          // Method 2: Direct click (proven method from old code)
+          console.log('Method 2: Direct element.click()');
+          domElement.click();
           
-          // Method 3: Comprehensive mouse event sequence with more events
-          const mouseEventTypes = ['mouseover', 'mouseenter', 'mousedown', 'mouseup', 'click'];
-          mouseEventTypes.forEach((eventType, index) => {
-            setTimeout(() => {
+          // Method 3: Mouse events sequence (proven from old code)
+          setTimeout(() => {
+            console.log('Method 3: mousedown/mouseup sequence');
+            ['mousedown', 'mouseup', 'click'].forEach(eventType => {
               const event = new MouseEvent(eventType, {
                 view: window,
                 bubbles: true,
@@ -571,120 +628,84 @@ function executeClickOnElement(elementIndex, elements) {
                 clientX: centerX,
                 clientY: centerY,
                 button: 0,
-                buttons: eventType === 'mousedown' ? 1 : 0,
-                detail: eventType === 'click' ? 1 : 0
+                buttons: eventType === 'mousedown' ? 1 : 0
               });
               domElement.dispatchEvent(event);
-            }, index * 10);
-          });
+            });
+          }, 100);
           
-          // Method 4: Pointer events (for modern web apps)
-          const pointerEventTypes = ['pointerdown', 'pointerup'];
-          pointerEventTypes.forEach((eventType, index) => {
-            setTimeout(() => {
-              const event = new PointerEvent(eventType, {
-                view: window,
-                bubbles: true,
-                cancelable: true,
-                clientX: centerX,
-                clientY: centerY,
-                button: 0,
-                buttons: eventType === 'pointerdown' ? 1 : 0,
-                pointerId: 1,
-                pointerType: 'mouse'
-              });
-              domElement.dispatchEvent(event);
-            }, 50 + index * 10);
-          });
-          
-          // Method 5: Touch events (for mobile-style interactions)
-          if (domElement.tagName === 'DIV' || domElement.getAttribute('role') === 'button') {
-            setTimeout(() => {
-              const touchEvent = new TouchEvent('touchstart', {
-                bubbles: true,
-                cancelable: true,
-                touches: [{
-                  clientX: centerX,
-                  clientY: centerY,
-                  target: domElement
-                }]
-              });
-              domElement.dispatchEvent(touchEvent);
-              
-              setTimeout(() => {
-                const touchEndEvent = new TouchEvent('touchend', {
-                  bubbles: true,
-                  cancelable: true
-                });
-                domElement.dispatchEvent(touchEndEvent);
-              }, 50);
-            }, 100);
-          }
-          
-          // Method 6: For buttons and button-like elements with keyboard
-          if (domElement.tagName === 'BUTTON' || domElement.getAttribute('role') === 'button' || domElement.tagName === 'DIV') {
-            setTimeout(() => {
-              domElement.focus();
-              ['Enter', ' '].forEach((key, index) => {
+          // Method 4: Try clicking text or image elements inside as fallback
+          setTimeout(() => {
+            console.log('Method 4: Trying text and image elements inside');
+            const textElements = domElement.querySelectorAll('span, p, div, h1, h2, h3, h4, h5, h6, strong, em, label');
+            const imageElements = domElement.querySelectorAll('img, svg, i[class*="icon"], [class*="icon"]');
+            
+            // Try text elements first
+            textElements.forEach((textEl, index) => {
+              if (textEl.textContent && textEl.textContent.trim()) {
                 setTimeout(() => {
-                  const keyDownEvent = new KeyboardEvent('keydown', {
-                    key: key,
-                    code: key === 'Enter' ? 'Enter' : 'Space',
-                    bubbles: true,
-                    cancelable: true
-                  });
-                  const keyUpEvent = new KeyboardEvent('keyup', {
-                    key: key,
-                    code: key === 'Enter' ? 'Enter' : 'Space',
-                    bubbles: true,
-                    cancelable: true
-                  });
-                  domElement.dispatchEvent(keyDownEvent);
-                  setTimeout(() => domElement.dispatchEvent(keyUpEvent), 50);
-                }, index * 100);
-              });
-            }, 150);
-          }
-          
-          // Method 7: Try clicking on parent elements if this is a nested structure
-          if (!clickSuccessful && domElement.tagName === 'DIV') {
-            setTimeout(() => {
-              let parent = domElement.parentElement;
-              let attempts = 0;
-              while (parent && attempts < 3) {
-                if (parent.onclick || parent.getAttribute('role') === 'button' || 
-                    parent.style.cursor === 'pointer' || parent.classList.contains('clickable')) {
                   try {
-                    parent.click();
-                    console.log('Clicked parent element:', parent);
-                    break;
+                    console.log('Clicking text element:', textEl.textContent.trim().substring(0, 30));
+                    textEl.click();
+                    
+                    // Also try mouse events on text element
+                    const textRect = textEl.getBoundingClientRect();
+                    const textCenterX = textRect.left + textRect.width / 2;
+                    const textCenterY = textRect.top + textRect.height / 2;
+                    
+                    ['mousedown', 'mouseup', 'click'].forEach(eventType => {
+                      const event = new MouseEvent(eventType, {
+                        view: window,
+                        bubbles: true,
+                        cancelable: true,
+                        clientX: textCenterX,
+                        clientY: textCenterY,
+                        button: 0,
+                        buttons: eventType === 'mousedown' ? 1 : 0
+                      });
+                      textEl.dispatchEvent(event);
+                    });
                   } catch (e) {
-                    console.log('Parent click failed');
+                    console.log('Text element click failed');
                   }
-                }
-                parent = parent.parentElement;
-                attempts++;
+                }, index * 50);
               }
-            }, 200);
-          }
-          
-          // Method 8: Direct onclick handler invocation
-          if (domElement.onclick && typeof domElement.onclick === 'function') {
+            });
+            
+            // Try image elements after a delay
             setTimeout(() => {
-              try {
-                domElement.onclick.call(domElement, new MouseEvent('click', {
-                  bubbles: true,
-                  cancelable: true,
-                  clientX: centerX,
-                  clientY: centerY
-                }));
-              } catch (onclickError) {
-                console.log('Direct onclick call failed:', onclickError);
-              }
-            }, 250);
-          }
+              imageElements.forEach((imgEl, index) => {
+                setTimeout(() => {
+                  try {
+                    console.log('Clicking image/icon element:', imgEl.tagName, imgEl.className);
+                    imgEl.click();
+                    
+                    // Also try mouse events on image element
+                    const imgRect = imgEl.getBoundingClientRect();
+                    const imgCenterX = imgRect.left + imgRect.width / 2;
+                    const imgCenterY = imgRect.top + imgRect.height / 2;
+                    
+                    ['mousedown', 'mouseup', 'click'].forEach(eventType => {
+                      const event = new MouseEvent(eventType, {
+                        view: window,
+                        bubbles: true,
+                        cancelable: true,
+                        clientX: imgCenterX,
+                        clientY: imgCenterY,
+                        button: 0,
+                        buttons: eventType === 'mousedown' ? 1 : 0
+                      });
+                      imgEl.dispatchEvent(event);
+                    });
+                  } catch (e) {
+                    console.log('Image element click failed');
+                  }
+                }, index * 50);
+              });
+            }, 200);
+          }, 200);
           
-          resolve({ success: true, message: `Successfully clicked: ${elementInfo.title || elementInfo.tagName}` });
+          resolve({ success: true, message: `Successfully attempted click on: ${elementInfo.title || elementInfo.tagName}` });
           
         } catch (error) {
           console.error('Click execution failed:', error);
