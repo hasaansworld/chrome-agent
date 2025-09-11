@@ -26,25 +26,27 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         sendResponse({ success: false, error: error.message });
       });
     return true; // Keep the message channel open for async response
-  } else if (request.action === "captureScreenshot") {
-    captureTabScreenshot(sender.tab.id)
-      .then((screenshot) => {
-        sendResponse({ success: true, screenshot });
-      })
-      .catch((error) => {
-        console.error("Error capturing screenshot:", error);
-        sendResponse({ success: false, error: error.message });
-      });
-    return true; // Keep the message channel open for async response
   }
 });
 
 async function captureTabScreenshot(tabId) {
   try {
+    console.log("Attempting to capture screenshot for tab:", tabId);
+    
+    // Make sure the tab exists and is active
+    const tab = await chrome.tabs.get(tabId);
+    if (!tab) {
+      throw new Error(`Tab ${tabId} not found`);
+    }
+    
+    console.log("Tab found:", tab.url, "Active:", tab.active);
+    
     const screenshot = await chrome.tabs.captureVisibleTab(null, {
       format: 'png',
       quality: 90
     });
+    
+    console.log("Screenshot captured successfully, length:", screenshot.length);
     return screenshot;
   } catch (error) {
     console.error("Error capturing screenshot:", error);
@@ -63,7 +65,6 @@ async function callOpenAIAPI(message, elements = [], conversationHistory = [], m
   }
 
   console.log("=== OPENAI API CALL DEBUG ===");
-  console.log("Screenshot provided:", screenshot ? "YES (" + screenshot.substring(0, 50) + "...)" : "NO");
   console.log("Elements count:", elements.length);
   console.log("Conversation history length:", conversationHistory.length);
   console.log("Model:", model);
@@ -78,7 +79,7 @@ async function callOpenAIAPI(message, elements = [], conversationHistory = [], m
     elementType: el.elementType
   }));
 
-  const systemPrompt = `You are an autonomous web automation agent. You will be provided with task instructions, HTML DOM content, and a screenshot of the current page state. Your job is to analyze the current page state and determine the next action needed to complete the task.
+  const systemPrompt = `You are an autonomous web automation agent. You will be provided with task instructions and HTML DOM content. Your job is to analyze the current page state and determine the next action needed to complete the task.
 
 TASK INSTRUCTIONS: Complete the user's request by clicking through the necessary elements step by step.
 
@@ -86,8 +87,8 @@ Available DOM elements:
 ${elementsList.map(el => `${el.index}: ${el.tagName}${el.type ? `[${el.type}]` : ''} - "${el.title}" (${el.elementType})`).join('\n')}
 
 AGENT BEHAVIOR:
-- You are provided with both DOM elements and a screenshot of the current page state
-- Use the screenshot to understand the visual layout and current state of the page
+- You are provided with DOM elements that describe the current page state
+- Use the DOM element information to understand the page structure and available interactions
 - Analyze the current page and determine what action is needed next to progress toward the goal
 - Available actions: click elements, enter text, press Enter, scroll, manage tabs (open/switch/list)
 - If you need to fill a form field, use "enterText" action with the appropriate text
@@ -100,7 +101,6 @@ AGENT BEHAVIOR:
 - If you need to switch between tabs, use "switchTab" action with the EXACT tab ID from the tab list
 - When switching tabs, carefully match the domain and title to find the correct tab ID
 - Example: if you want Google Sheets, look for "docs.google.com" domain, not "youtube.com"
-- IMPORTANT: Use the screenshot to understand the visual context and identify elements that may not be clearly described in the DOM
 - IMPORTANT: If you cannot see relevant content or actions fail, try multiple alternative strategies:
   * Scroll down/up to reveal more content that might be hidden
   * Look for navigation menus, search boxes, or alternative paths to reach your goal
@@ -231,34 +231,11 @@ VALID EXAMPLE:
     messages.push(...historyMessages);
   }
 
-  // Create user message with text and screenshot
-  const userMessage = {
+  // Always add current user message as simple text (no screenshots)
+  messages.push({
     role: "user",
-    content: []
-  };
-
-  // Add text content
-  userMessage.content.push({
-    type: "text",
-    text: message
+    content: message,
   });
-
-  // Add screenshot if available
-  if (screenshot) {
-    userMessage.content.push({
-      type: "image_url",
-      image_url: {
-        url: screenshot
-      }
-    });
-  }
-
-  // If no screenshot, convert to simple text message
-  if (!screenshot) {
-    userMessage.content = message;
-  }
-
-  messages.push(userMessage);
 
   const requestBody = {
     model: model,

@@ -1182,19 +1182,31 @@ If failed: {"action":"retry","result":"the [action] did not occur, retry"}`;
   async function captureScreenshot() {
     return new Promise((resolve) => {
       addMessage("system", "📸 Capturing screenshot...");
+      
+      // Add timeout to prevent hanging
+      const timeout = setTimeout(() => {
+        addMessage("system", "⏱️ Screenshot capture timed out, continuing without screenshot");
+        resolve(null);
+      }, 5000); // 5 second timeout
+      
       chrome.runtime.sendMessage(
         { action: "captureScreenshot" },
         (response) => {
+          clearTimeout(timeout);
+          
           if (chrome.runtime.lastError) {
             console.error("Error capturing screenshot:", chrome.runtime.lastError);
             addMessage("system", "❌ Screenshot capture failed: " + chrome.runtime.lastError.message);
+            addMessage("system", "🔄 Continuing without screenshot...");
             resolve(null);
-          } else if (response.success) {
+          } else if (response && response.success) {
             addMessage("system", "✅ Screenshot captured successfully");
             resolve(response.screenshot);
           } else {
-            console.error("Screenshot capture failed:", response.error);
-            addMessage("system", "❌ Screenshot capture failed: " + response.error);
+            const errorMsg = response ? response.error : "No response received";
+            console.error("Screenshot capture failed:", errorMsg);
+            addMessage("system", "❌ Screenshot capture failed: " + errorMsg);
+            addMessage("system", "🔄 Continuing without screenshot...");
             resolve(null);
           }
         }
@@ -1209,16 +1221,13 @@ If failed: {"action":"retry","result":"the [action] did not occur, retry"}`;
     model
   ) {
     try {
-      // Capture screenshot before API call
-      const screenshot = await captureScreenshot();
-      
-      // First attempt
+      // First attempt (no screenshot)
       return await callOpenAIAPISingle(
         message,
         elements,
         conversationHistory,
         model,
-        screenshot
+        null // No screenshot
       );
     } catch (error) {
       // Check if it's a 500 error that should be retried
@@ -1232,16 +1241,13 @@ If failed: {"action":"retry","result":"the [action] did not occur, retry"}`;
         await new Promise((resolve) => setTimeout(resolve, 1000)); // Wait 1 second
 
         try {
-          // Capture fresh screenshot for retry
-          const screenshot = await captureScreenshot();
-          
-          // Second attempt
+          // Second attempt (no screenshot)
           return await callOpenAIAPISingle(
             message,
             elements,
             conversationHistory,
             model,
-            screenshot
+            null // No screenshot
           );
         } catch (retryError) {
           // If second attempt also fails, give up
