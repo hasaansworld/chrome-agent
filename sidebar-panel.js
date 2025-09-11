@@ -304,6 +304,8 @@
           // Wait for page updates after click
           await new Promise((resolve) => setTimeout(resolve, 2000));
 
+          // Additional delay before verification
+          await new Promise((resolve) => setTimeout(resolve, 1000));
           addMessage("system", `🔍 Proceeding to verification step...`);
         } else if (
           jsonResponse.action === "enterText" &&
@@ -335,6 +337,8 @@
           // Wait for page updates after text entry
           await new Promise((resolve) => setTimeout(resolve, 1000));
 
+          // Additional delay before verification
+          await new Promise((resolve) => setTimeout(resolve, 1000));
           addMessage("system", `🔍 Proceeding to verification step...`);
         } else if (
           jsonResponse.action === "scrollX" &&
@@ -367,6 +371,8 @@
           // Wait for scroll to complete
           await new Promise((resolve) => setTimeout(resolve, 500));
 
+          // Additional delay before verification
+          await new Promise((resolve) => setTimeout(resolve, 1000));
           addMessage("system", `🔍 Proceeding to verification step...`);
         } else if (
           jsonResponse.action === "scrollY" &&
@@ -399,6 +405,8 @@
           // Wait for scroll to complete
           await new Promise((resolve) => setTimeout(resolve, 500));
 
+          // Additional delay before verification
+          await new Promise((resolve) => setTimeout(resolve, 1000));
           addMessage("system", `🔍 Proceeding to verification step...`);
         } else if (
           jsonResponse.action === "pressEnter" &&
@@ -427,6 +435,8 @@
           // Wait for page updates after pressing Enter (form submissions, etc.)
           await new Promise((resolve) => setTimeout(resolve, 2000));
 
+          // Additional delay before verification
+          await new Promise((resolve) => setTimeout(resolve, 1000));
           addMessage("system", `🔍 Proceeding to verification step...`);
         } else if (
           jsonResponse.action === "openTab" &&
@@ -537,7 +547,7 @@
             // If first attempt failed, wait and retry once
             if (retryCount === 0) {
               console.log("Content script not found, retrying in 3 seconds...");
-              addMessageToChat("system", "⏳ Content script not loaded, retrying in 3 seconds...");
+              addMessage("system", "⏳ Content script not loaded, retrying in 3 seconds...");
               
               setTimeout(async () => {
                 const retryResult = await getElementsFromTab(tabId, 1);
@@ -545,21 +555,21 @@
               }, 3000);
             } else {
               console.error("Retry also failed");
-              addMessageToChat("system", "❌ Could not connect to page content after retry. Please reload the page.");
+              addMessage("system", "❌ Could not connect to page content after retry. Please reload the page.");
               resolve(null);
             }
           } else {
             // Check if we got valid elements
             if (response && response.data && response.data.elements && response.data.elements.length > 0) {
               if (retryCount > 0) {
-                addMessageToChat("system", `✅ Successfully found ${response.data.elements.length} elements on retry!`);
+                addMessage("system", `✅ Successfully found ${response.data.elements.length} elements on retry!`);
               }
               resolve(response);
             } else if (!response || !response.data || !response.data.elements) {
               // Got invalid response, retry once if haven't already
               if (retryCount === 0) {
                 console.log("Got invalid response, retrying in 2 seconds...");
-                addMessageToChat("system", "⏳ Page might still be loading, retrying in 2 seconds...");
+                addMessage("system", "⏳ Page might still be loading, retrying in 2 seconds...");
                 
                 setTimeout(async () => {
                   const retryResult = await getElementsFromTab(tabId, 1);
@@ -567,7 +577,7 @@
                 }, 2000);
               } else {
                 console.log("No valid elements found after retry");
-                addMessageToChat("system", "⚠️ No interactive elements found on this page");
+                addMessage("system", "⚠️ No interactive elements found on this page");
                 resolve(response); // Return whatever we got
               }
             } else {
