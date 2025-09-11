@@ -140,17 +140,34 @@
         if (isVerificationStep && lastActionExecuted) {
           // This is a verification step
           contextMessage = `VERIFICATION STEP: You just executed: ${JSON.stringify(lastActionExecuted)}. 
+
+          IMPORTANT: Look ONLY at the current DOM elements to verify if the action worked. Ignore any previous expectations or assumptions.
           
-          Please verify if this action was successful by analyzing the current page state. 
+          For CLICK actions, check if:
+          - New elements appeared (modals, pages, forms, buttons, content)
+          - Page navigation occurred (URL changed, new page loaded)
+          - UI state changed (buttons enabled/disabled, content updated)
+          - Error messages appeared
           
-          If the action was successful and you can see the expected changes, respond with:
-          {"action": "verified", "message": "Action was successful, explanation of what changed"}
+          For TEXT ENTRY actions, check if:
+          - The text actually appears in the target input field
+          - Form validation messages appeared
+          - Auto-complete or suggestions showed up
           
-          If the action failed or you don't see expected changes, respond with:
-          {"action": "retry", "message": "Action failed, explanation of what went wrong"}
+          For SCROLL actions, check if:
+          - New content is now visible that wasn't before
+          - Page position actually changed
           
-          If the task is now complete, respond with:
-          {"action": "none", "message": "Task completed successfully"}`;
+          Be HONEST about what you observe in the DOM:
+          
+          If you see clear evidence the action worked:
+          {"action": "verified", "message": "Specific evidence: [describe exactly what changed in the DOM]"}
+          
+          If you don't see expected changes or the action clearly failed:
+          {"action": "retry", "message": "No changes observed: [describe what you expected vs what you see]"}
+          
+          If the overall task is complete based on what you see:
+          {"action": "none", "message": "Task completed: [describe the final state you can see]"}`;
         } else {
           // This is a regular action step
           contextMessage = stepCount === 1 ? 
@@ -168,7 +185,9 @@
         const selectedModel = modelSelector.value;
         
         // Call LLM with current state
-        const response = await callGroqAPI(contextMessage, elementsData.data.elements, conversationHistory, selectedModel);
+        // For verification steps, don't include conversation history to avoid bias
+        const historyForThisStep = isVerificationStep ? [] : conversationHistory;
+        const response = await callGroqAPI(contextMessage, elementsData.data.elements, historyForThisStep, selectedModel);
         
         // Parse response
         let jsonResponse;
