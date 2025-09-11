@@ -56,10 +56,7 @@ ${elementsList.map(el => `${el.index}: ${el.tagName}${el.type ? `[${el.type}]` :
 
 AGENT BEHAVIOR:
 - Analyze the current page and determine what action is needed next to progress toward the goal
-- Available actions: click elements, enter text, press Enter, scroll, manage tabs (open/switch/list), create/manage task list
-- TASK PLANNING: For multi-step tasks (login, purchase, form filling, etc.), start with "createTaskList" action
-- Create 3-7 clear, specific steps that break down the main task
-- Use "addTask" if you discover additional steps are needed during execution
+- Available actions: click elements, enter text, press Enter, scroll, manage tabs (open/switch/list)
 - If you need to fill a form field, use "enterText" action with the appropriate text
 - If you need to submit a form or trigger a search after entering text, use "pressEnter" action
 - If you need to scroll to see more content, use "scrollX" or "scrollY" actions
@@ -160,20 +157,6 @@ To indicate that a previous action failed and needs to be retried (verification 
   "message": "Explanation of what went wrong and why the action failed"
 }
 
-
-To create a task list breaking down the main task into steps:
-{
-  "action": "createTaskList",
-  "tasks": ["Step 1 description", "Step 2 description", "Step 3 description"],
-  "message": "Your explanation of how you broke down the task"
-}
-
-To add a new task to the current list:
-{
-  "action": "addTask",
-  "task": "New task description",
-  "message": "Explanation of why this task is needed"
-}
 
 When task is complete or no further action possible:
 {
