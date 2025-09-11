@@ -314,6 +314,10 @@
       Based on what you can observe in the current DOM, respond with:
       - {"action": "verified", "message": "Action successful because..."} if it worked
       - {"action": "retry", "message": "Action failed because..."} if it failed
+      - {"action": "complete", "message": "Action complete, stop now"} if the goal is fully achieved and no further actions needed
+      
+      Use "complete" when the specific goal has been accomplished and the agent should stop working on this task.
+      Use "verified" when the action worked but more steps are needed to complete the overall goal.
       
       DO NOT assume success - only verify based on actual observable changes in the DOM.`;
 
@@ -368,6 +372,17 @@
           verified: true,
           message: verificationResponse.message,
         };
+      } else if (verificationResponse.action === "complete") {
+        addMessage(
+          "system",
+          `🎉 Task completed: ${verificationResponse.message}`
+        );
+        return {
+          success: true,
+          verified: true,
+          completed: true,
+          message: verificationResponse.message,
+        };
       } else if (verificationResponse.action === "retry") {
         addMessage(
           "system",
@@ -382,7 +397,7 @@
         return {
           success: false,
           error:
-            "Invalid verification response. Expected 'verified' or 'retry' action.",
+            "Invalid verification response. Expected 'verified', 'complete', or 'retry' action.",
         };
       }
     } catch (error) {
@@ -399,8 +414,120 @@
       `🤖 Starting autonomous agent for task: "${initialMessage}"`
     );
 
-    // Start with the first action step
-    await executeActionStep(initialMessage, stepCount, maxSteps);
+    // Simple action loop with full chat context
+    while (stepCount < maxSteps) {
+      stepCount++;
+      
+      try {
+        addMessage("system", `🔄 Step ${stepCount}: Getting page state and determining next action...`);
+        
+        // Get fresh DOM elements
+        const elementsData = await getElementsFromTab(currentTabId);
+        if (!elementsData || !elementsData.data || !elementsData.data.elements) {
+          addMessage("system", "❌ Could not extract elements from the page");
+          break;
+        }
+
+        // Clean user message for context
+        const userContextMessage = `Task: "${initialMessage}". Step ${stepCount}. What action should I take next?`;
+        
+        // Full prompt for the API call
+        const fullPrompt = `Task: "${initialMessage}". Step ${stepCount}.
+
+Look at the current page state and determine what action to take next to accomplish this task.
+
+If the task is complete, use action "none".
+Otherwise, choose the most appropriate action to continue progress.
+
+Respond with JSON using one of these formats:
+
+Click: {"action": "click", "elementIndex": 123, "message": "explanation"}
+Enter text: {"action": "enterText", "elementIndex": 123, "text": "text to enter", "message": "explanation"}  
+Press Enter: {"action": "pressEnter", "elementIndex": 123, "message": "explanation"}
+Scroll: {"action": "scrollY", "amount": 300, "message": "explanation"}
+Open tab: {"action": "openTab", "url": "https://example.com", "message": "explanation"}
+Switch tab: {"action": "switchTab", "tabId": 123, "message": "explanation"}
+Get tabs: {"action": "getTabList", "message": "explanation"}
+Task complete: {"action": "none", "message": "task completed successfully"}`;
+
+        addMessage("user", userContextMessage);
+        conversationHistory.push({ role: "user", content: userContextMessage });
+
+        // Get model response with full chat context
+        const selectedModel = modelSelector.value;
+        const response = await callGroqAPI(
+          fullPrompt,
+          elementsData.data.elements,
+          conversationHistory,
+          selectedModel
+        );
+
+        let jsonResponse;
+        try {
+          jsonResponse = JSON.parse(response);
+        } catch (parseError) {
+          addMessage("system", `❌ Invalid JSON response: ${response.substring(0, 200)}...`);
+          continue;
+        }
+
+        conversationHistory.push({ role: "assistant", content: response });
+        addMessage("assistant", jsonResponse.message || "Taking action...");
+
+        // Check if task is complete
+        if (jsonResponse.action === "none") {
+          addMessage("system", `🎉 Task completed: ${jsonResponse.message}`);
+          break;
+        }
+
+        // Execute the action
+        const actionSuccess = await executeAction(jsonResponse, currentTabId);
+        
+        // Add detailed action result to chat context for agent memory
+        let actionResultMessage;
+        if (actionSuccess) {
+          actionResultMessage = `✅ Successfully executed ${jsonResponse.action}`;
+          if (jsonResponse.action === "click") {
+            actionResultMessage += ` on element ${jsonResponse.elementIndex}`;
+          } else if (jsonResponse.action === "enterText") {
+            actionResultMessage += ` "${jsonResponse.text}" into element ${jsonResponse.elementIndex}`;
+          } else if (jsonResponse.action === "pressEnter") {
+            actionResultMessage += ` on element ${jsonResponse.elementIndex}`;
+          } else if (jsonResponse.action === "scrollY") {
+            actionResultMessage += ` by ${jsonResponse.amount}px vertically`;
+          } else if (jsonResponse.action === "openTab") {
+            actionResultMessage += ` to ${jsonResponse.url}`;
+          }
+          actionResultMessage += `. ${jsonResponse.message}`;
+          
+          addMessage("system", "✅ Action completed successfully");
+          // Wait for page updates
+          addMessage("system", "🕰️ Waiting for page updates...");
+          await new Promise(resolve => setTimeout(resolve, getActionDelay(jsonResponse.action)));
+        } else {
+          actionResultMessage = `❌ Failed to execute ${jsonResponse.action}`;
+          if (jsonResponse.action === "click") {
+            actionResultMessage += ` on element ${jsonResponse.elementIndex}`;
+          } else if (jsonResponse.action === "enterText") {
+            actionResultMessage += ` "${jsonResponse.text}" into element ${jsonResponse.elementIndex}`;
+          }
+          actionResultMessage += `. Action failed - will try different approach.`;
+          
+          addMessage("system", "❌ Action failed, will try different approach in next step");
+        }
+        
+        // Add the detailed result to conversation history so the agent remembers what happened
+        conversationHistory.push({ role: "system", content: actionResultMessage });
+
+      } catch (error) {
+        console.error("Agent step error:", error);
+        addMessage("system", `❌ Step error: ${error.message}`);
+        break;
+      }
+    }
+
+    if (stepCount >= maxSteps) {
+      addMessage("system", `⚠️ Agent reached maximum steps (${maxSteps}), stopping for safety`);
+    }
   }
 
   async function executeActionStep(
@@ -536,15 +663,18 @@ Your job is to VERIFY if that action worked by looking at the current DOM elemen
 
 VERIFICATION ONLY - RESPOND WITH ONE OF THESE TWO FORMATS:
 
-If the previous action succeeded:
+If the previous action succeeded and more steps needed:
 {"action": "verified", "result": "action succeeded, now do [describe next step]"}
+
+If the previous action succeeded and goal is complete:
+{"action": "complete", "result": "action complete, stop now"}
 
 If the previous action failed:
 {"action": "retry", "result": "the [action] did not occur, retry"}
 
 EXAMPLES:
-Success: {"action": "verified", "result": "action succeeded, now do click the create new event button"}
-
+Continue: {"action": "verified", "result": "action succeeded, now do click the create new event button"}
+Complete: {"action": "complete", "result": "action complete, stop now"}
 Failure: {"action": "retry", "result": "the navigation did not occur, retry"}
 
 DO NOT use "click", "enterText", "elementIndex" - this is verification only.`;
@@ -575,7 +705,8 @@ DO NOT use "click", "enterText", "elementIndex" - this is verification only.`;
           // Retry with a much shorter, focused verification prompt
           const shortPrompt = `Verify if the last action worked. Respond with valid JSON only:
           
-If successful: {"action":"verified","result":"action succeeded, now do [next step]"}
+If successful and more steps needed: {"action":"verified","result":"action succeeded, now do [next step]"}
+If successful and goal complete: {"action":"complete","result":"action complete, stop now"}
 If failed: {"action":"retry","result":"the [action] did not occur, retry"}`;
 
           const retryResponse = await callGroqAPI(
@@ -612,7 +743,7 @@ If failed: {"action":"retry","result":"the [action] did not occur, retry"}`;
         jsonResponse.elementIndex !== undefined ||
         jsonResponse.text !== undefined ||
         (jsonResponse.action &&
-          !["verified", "retry"].includes(jsonResponse.action))
+          !["verified", "retry", "complete"].includes(jsonResponse.action))
       ) {
         addMessage(
           "system",
@@ -645,11 +776,12 @@ If failed: {"action":"retry","result":"the [action] did not occur, retry"}`;
 
       if (
         jsonResponse.action !== "verified" &&
-        jsonResponse.action !== "retry"
+        jsonResponse.action !== "retry" &&
+        jsonResponse.action !== "complete"
       ) {
         addMessage(
           "system",
-          `❌ Invalid verification action: "${jsonResponse.action}". Must be "verified" or "retry"`
+          `❌ Invalid verification action: "${jsonResponse.action}". Must be "verified", "complete", or "retry"`
         );
         return;
       }
@@ -684,6 +816,11 @@ If failed: {"action":"retry","result":"the [action] did not occur, retry"}`;
         } else {
           addMessage("system", `🎯 Task completed: No further actions needed`);
         }
+      } else if (jsonResponse.action === "complete") {
+        addMessage("system", `🎉 Task completed`);
+        addMessage("system", `📋 Final result: ${jsonResponse.result}`);
+        addMessage("system", `🎯 Agent stopping - goal achieved`);
+        return; // Stop the agent completely
       } else if (jsonResponse.action === "retry") {
         addMessage("system", `⚠️ Verification failed`);
 
