@@ -387,14 +387,42 @@ window.showBoundingBoxes = showBoundingBoxes;
 window.clearBoundingBoxes = clearBoundingBoxes;
 window.extractInteractiveElements = extractInteractiveElements;
 
+console.log('Content script loaded successfully');
+
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  console.log('Message received:', request.action);
+  
   if (request.action === 'extractElements') {
+    console.log('Processing extractElements request');
     try {
       const result = extractInteractiveElements();
+      console.log('Extract result:', result);
       sendResponse({ success: true, data: result });
     } catch (error) {
+      console.error('Extract error:', error);
       sendResponse({ success: false, error: error.message });
     }
+  } else if (request.action === 'executeClickByIndex') {
+    // Extract fresh elements and click by index
+    console.log('Processing executeClickByIndex request');
+    try {
+      const result = extractInteractiveElements();
+      const elements = result.elements;
+      
+      executeClickOnElement(request.elementIndex, elements)
+        .then(result => {
+          console.log('Click result:', result);
+          sendResponse(result);
+        })
+        .catch(error => {
+          console.error('Click error:', error);
+          sendResponse({ success: false, error: error.message });
+        });
+    } catch (error) {
+      console.error('Click setup error:', error);
+      sendResponse({ success: false, error: error.message });
+    }
+    return true; // Keep message channel open for async response
   } else if (request.action === 'showBoundingBoxes') {
     try {
       const result = showBoundingBoxes();
@@ -412,3 +440,99 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
   return true;
 });
+
+function executeClickOnElement(elementIndex, elements) {
+  if (elementIndex < 0 || elementIndex >= elements.length) {
+    return Promise.resolve({ success: false, error: `Invalid element index ${elementIndex}. Available indices: 0-${elements.length - 1}` });
+  }
+
+  const elementInfo = elements[elementIndex];
+  
+  // Use the DOM element reference that was stored during extraction
+  const domElement = elementInfo.domElement;
+  
+  if (!domElement) {
+    return Promise.resolve({ success: false, error: 'DOM element reference not found in extracted data' });
+  }
+  
+  if (!domElement.isConnected) {
+    return Promise.resolve({ success: false, error: 'Element is no longer in the document' });
+  }
+  
+  console.log('Clicking element:', {
+    index: elementIndex,
+    tagName: domElement.tagName,
+    text: domElement.textContent?.substring(0, 50),
+    rect: domElement.getBoundingClientRect()
+  });
+  
+  try {
+    // Scroll element into view first
+    domElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    
+    // Get element position for mouse events
+    const rect = domElement.getBoundingClientRect();
+    const centerX = rect.left + rect.width / 2;
+    const centerY = rect.top + rect.height / 2;
+    
+    // Return Promise for async execution
+    return new Promise((resolve) => {
+      setTimeout(() => {
+        try {
+          // Method 1: Direct click
+          domElement.click();
+          
+          // Method 2: Full mouse event sequence
+          const mouseEvents = ['mousedown', 'mouseup', 'click'];
+          mouseEvents.forEach(eventType => {
+            const event = new MouseEvent(eventType, {
+              view: window,
+              bubbles: true,
+              cancelable: true,
+              clientX: centerX,
+              clientY: centerY,
+              button: 0,
+              buttons: eventType === 'mousedown' ? 1 : 0
+            });
+            domElement.dispatchEvent(event);
+          });
+          
+          // Method 3: For buttons and button-like elements
+          if (domElement.tagName === 'BUTTON' || domElement.getAttribute('role') === 'button') {
+            domElement.focus();
+            setTimeout(() => {
+              // Try both Enter and Space
+              ['Enter', ' '].forEach(key => {
+                const keyEvent = new KeyboardEvent('keydown', {
+                  key: key,
+                  code: key === 'Enter' ? 'Enter' : 'Space',
+                  bubbles: true,
+                  cancelable: true
+                });
+                domElement.dispatchEvent(keyEvent);
+              });
+            }, 50);
+          }
+          
+          // Method 4: Direct onclick handler for elements with onclick
+          if (domElement.onclick && typeof domElement.onclick === 'function') {
+            try {
+              domElement.onclick.call(domElement, new MouseEvent('click'));
+            } catch (onclickError) {
+              console.log('Direct onclick call failed:', onclickError);
+            }
+          }
+          
+          resolve({ success: true, message: `Successfully clicked: ${elementInfo.title || elementInfo.tagName}` });
+          
+        } catch (error) {
+          console.error('Click execution failed:', error);
+          resolve({ success: false, error: `Click failed: ${error.message}` });
+        }
+      }, 300); // Wait for scroll to complete
+    });
+    
+  } catch (error) {
+    return Promise.resolve({ success: false, error: `Click setup failed: ${error.message}` });
+  }
+}

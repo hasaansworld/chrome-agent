@@ -1,14 +1,11 @@
 // Background script for Chat Assistant
-chrome.action.onClicked.addListener((tab) => {
-  // Send message to content script to toggle sidebar
-  chrome.tabs.sendMessage(tab.id, { action: "toggleSidebar" }, (response) => {
-    if (chrome.runtime.lastError) {
-      console.error(
-        "Error sending message to content script:",
-        chrome.runtime.lastError.message
-      );
-    }
-  });
+chrome.action.onClicked.addListener(async (tab) => {
+  // Open the sidebar panel
+  try {
+    await chrome.sidePanel.open({ tabId: tab.id });
+  } catch (error) {
+    console.error("Error opening sidebar:", error);
+  }
 });
 
 // Handle messages from content scripts
