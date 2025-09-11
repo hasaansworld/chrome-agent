@@ -120,6 +120,8 @@
   async function runAutonomousAgent(initialMessage) {
     let stepCount = 0;
     const maxSteps = 20;
+    let lastActionExecuted = null;
+    let isVerificationStep = false;
 
     addMessage(
       "system",
@@ -143,10 +145,50 @@
         }
 
         // Build context message for this step
-        const contextMessage =
-          stepCount === 1
-            ? initialMessage
-            : `Continue with the task: "${initialMessage}". You have already taken ${stepCount - 1} steps. Analyze the current page state and determine what to do next.`;
+        let contextMessage;
+
+        if (isVerificationStep && lastActionExecuted) {
+          // This is a verification step
+          contextMessage = `VERIFICATION STEP: You just executed: ${JSON.stringify(
+            lastActionExecuted
+          )}. 
+
+          IMPORTANT: Look ONLY at the current DOM elements to verify if the action worked. Ignore any previous expectations or assumptions.
+          
+          For CLICK actions, check if:
+          - New elements appeared (modals, pages, forms, buttons, content)
+          - Page navigation occurred (URL changed, new page loaded)
+          - UI state changed (buttons enabled/disabled, content updated)
+          - Error messages appeared
+          
+          For TEXT ENTRY actions, check if:
+          - The text actually appears in the target input field
+          - Form validation messages appeared
+          - Auto-complete or suggestions showed up
+          
+          For SCROLL actions, check if:
+          - New content is now visible that wasn't before
+          - Page position actually changed
+          
+          Be HONEST about what you observe in the DOM:
+          
+          If you see clear evidence the action worked:
+          {"action": "verified", "message": "Specific evidence: [describe exactly what changed in the DOM]"}
+          
+          If you don't see expected changes or the action clearly failed:
+          {"action": "retry", "message": "No changes observed: [describe what you expected vs what you see]"}
+          
+          If the overall task is complete based on what you see:
+          {"action": "none", "message": "Task completed: [describe the final state you can see]"}`;
+        } else {
+          // This is a regular action step
+          contextMessage =
+            stepCount === 1
+              ? initialMessage
+              : `Continue with the task: "${initialMessage}". You have already taken ${Math.floor(
+                  stepCount / 2
+                )} verified steps. Analyze the current page state and determine what to do next.`;
+        }
 
         // Add current user message to conversation history
         conversationHistory.push({
@@ -158,10 +200,14 @@
         const selectedModel = modelSelector.value;
 
         // Call LLM with current state
+        // For verification steps, don't include conversation history to avoid bias
+        const historyForThisStep = isVerificationStep
+          ? []
+          : conversationHistory;
         const response = await callGroqAPI(
           contextMessage,
           elementsData.data.elements,
-          conversationHistory,
+          historyForThisStep,
           selectedModel
         );
 
@@ -211,6 +257,26 @@
             `🎯 Agent completed task: ${jsonResponse.message}`
           );
           break;
+        } else if (jsonResponse.action === "verified") {
+          // Verification successful, continue to next action
+          addMessage(
+            "system",
+            `✅ Verification successful: ${jsonResponse.message}`
+          );
+          isVerificationStep = false;
+          lastActionExecuted = null;
+          addMessage("system", `⏭️ Proceeding to next action...`);
+          continue;
+        } else if (jsonResponse.action === "retry") {
+          // Verification failed, retry the last action or continue with a different approach
+          addMessage(
+            "system",
+            `⚠️ Action needs retry: ${jsonResponse.message}`
+          );
+          isVerificationStep = false;
+          lastActionExecuted = null;
+          addMessage("system", `🔄 Trying different approach...`);
+          continue;
         } else if (
           jsonResponse.action === "click" &&
           jsonResponse.elementIndex !== undefined
@@ -223,6 +289,13 @@
 
           if (clickResult.success) {
             addMessage("system", `✓ Clicked element: ${clickResult.message}`);
+            // Set up for verification step
+            lastActionExecuted = {
+              action: "click",
+              elementIndex: jsonResponse.elementIndex,
+              expectedResult: jsonResponse.message,
+            };
+            isVerificationStep = true;
           } else {
             addMessage("system", `❌ Click failed: ${clickResult.error}`);
             break;
@@ -230,6 +303,8 @@
 
           // Wait for page updates after click
           await new Promise((resolve) => setTimeout(resolve, 2000));
+
+          addMessage("system", `🔍 Proceeding to verification step...`);
         } else if (
           jsonResponse.action === "enterText" &&
           jsonResponse.elementIndex !== undefined &&
@@ -244,6 +319,14 @@
 
           if (textResult.success) {
             addMessage("system", `✓ Entered text: ${textResult.message}`);
+            // Set up for verification step
+            lastActionExecuted = {
+              action: "enterText",
+              elementIndex: jsonResponse.elementIndex,
+              text: jsonResponse.text,
+              expectedResult: jsonResponse.message,
+            };
+            isVerificationStep = true;
           } else {
             addMessage("system", `❌ Text entry failed: ${textResult.error}`);
             break;
@@ -251,6 +334,8 @@
 
           // Wait for page updates after text entry
           await new Promise((resolve) => setTimeout(resolve, 1000));
+
+          addMessage("system", `🔍 Proceeding to verification step...`);
         } else if (
           jsonResponse.action === "scrollX" &&
           jsonResponse.amount !== undefined
@@ -267,6 +352,13 @@
               "system",
               `✓ Scrolled horizontally: ${scrollResult.message}`
             );
+            // Set up for verification step
+            lastActionExecuted = {
+              action: "scrollX",
+              amount: jsonResponse.amount,
+              expectedResult: jsonResponse.message,
+            };
+            isVerificationStep = true;
           } else {
             addMessage("system", `❌ Scroll failed: ${scrollResult.error}`);
             break;
@@ -274,6 +366,8 @@
 
           // Wait for scroll to complete
           await new Promise((resolve) => setTimeout(resolve, 500));
+
+          addMessage("system", `🔍 Proceeding to verification step...`);
         } else if (
           jsonResponse.action === "scrollY" &&
           jsonResponse.amount !== undefined
@@ -290,6 +384,13 @@
               "system",
               `✓ Scrolled vertically: ${scrollResult.message}`
             );
+            // Set up for verification step
+            lastActionExecuted = {
+              action: "scrollY",
+              amount: jsonResponse.amount,
+              expectedResult: jsonResponse.message,
+            };
+            isVerificationStep = true;
           } else {
             addMessage("system", `❌ Scroll failed: ${scrollResult.error}`);
             break;
@@ -297,6 +398,8 @@
 
           // Wait for scroll to complete
           await new Promise((resolve) => setTimeout(resolve, 500));
+
+          addMessage("system", `🔍 Proceeding to verification step...`);
         } else if (
           jsonResponse.action === "pressEnter" &&
           jsonResponse.elementIndex !== undefined
@@ -309,6 +412,13 @@
 
           if (enterResult.success) {
             addMessage("system", `✓ Pressed Enter: ${enterResult.message}`);
+            // Set up for verification step
+            lastActionExecuted = {
+              action: "pressEnter",
+              elementIndex: jsonResponse.elementIndex,
+              expectedResult: jsonResponse.message,
+            };
+            isVerificationStep = true;
           } else {
             addMessage("system", `❌ Press Enter failed: ${enterResult.error}`);
             break;
@@ -316,27 +426,8 @@
 
           // Wait for page updates after pressing Enter (form submissions, etc.)
           await new Promise((resolve) => setTimeout(resolve, 2000));
-        } else if (
-          jsonResponse.action === "pressKeys" &&
-          jsonResponse.elementIndex !== undefined &&
-          jsonResponse.keys !== undefined
-        ) {
-          // Execute press keys
-          const keysResult = await pressKeysInTab(
-            currentTabId,
-            jsonResponse.elementIndex,
-            jsonResponse.keys
-          );
 
-          if (keysResult.success) {
-            addMessage("system", `✓ Pressed keys: ${keysResult.message}`);
-          } else {
-            addMessage("system", `❌ Press keys failed: ${keysResult.error}`);
-            break;
-          }
-
-          // Wait for page updates after pressing keys
-          await new Promise((resolve) => setTimeout(resolve, 1000));
+          addMessage("system", `🔍 Proceeding to verification step...`);
         } else if (
           jsonResponse.action === "openTab" &&
           jsonResponse.url !== undefined
@@ -348,6 +439,8 @@
             addMessage("system", `✓ Opened new tab: ${tabResult.message}`);
             // Update current tab to the new one
             currentTabId = tabResult.tabId;
+            // Tab actions are automatically verified since they either succeed or fail
+            addMessage("system", `✅ Tab opened successfully, continuing...`);
           } else {
             addMessage("system", `❌ Failed to open tab: ${tabResult.error}`);
             break;
@@ -384,6 +477,11 @@
             );
             break;
           }
+
+          addMessage(
+            "system",
+            `✅ Tab list retrieved successfully, continuing...`
+          );
         } else if (
           jsonResponse.action === "switchTab" &&
           jsonResponse.tabId !== undefined
@@ -396,6 +494,8 @@
             // Update current tab reference
             currentTabId = jsonResponse.tabId;
             await getCurrentTabInfo();
+            // Tab actions are automatically verified since they either succeed or fail
+            addMessage("system", `✅ Tab switched successfully, continuing...`);
           } else {
             addMessage(
               "system",
@@ -554,29 +654,6 @@
         {
           action: "pressEnter",
           elementIndex: elementIndex,
-        },
-        (response) => {
-          if (chrome.runtime.lastError) {
-            resolve({
-              success: false,
-              error: chrome.runtime.lastError.message,
-            });
-          } else {
-            resolve(response || { success: false, error: "No response" });
-          }
-        }
-      );
-    });
-  }
-
-  async function pressKeysInTab(tabId, elementIndex, keys) {
-    return new Promise((resolve) => {
-      chrome.tabs.sendMessage(
-        tabId,
-        {
-          action: "pressKeys",
-          elementIndex: elementIndex,
-          keys: keys,
         },
         (response) => {
           if (chrome.runtime.lastError) {

@@ -56,10 +56,9 @@ ${elementsList.map(el => `${el.index}: ${el.tagName}${el.type ? `[${el.type}]` :
 
 AGENT BEHAVIOR:
 - Analyze the current page and determine what action is needed next to progress toward the goal
-- Available actions: click elements, enter text, press Enter, press keys, scroll, manage tabs (open/switch/list)
+- Available actions: click elements, enter text, press Enter, scroll, manage tabs (open/switch/list)
 - If you need to fill a form field, use "enterText" action with the appropriate text
 - If you need to submit a form or trigger a search after entering text, use "pressEnter" action
-- If you need to press specific keys or key combinations (like Ctrl+A, Escape, Tab, etc.), use "pressKeys" action with an array of keys
 - If you need to scroll to see more content, use "scrollX" or "scrollY" actions
 - If you need to click something, use "click" action on interactive elements
 - If you need to open a new website, use "openTab" action with the URL
@@ -73,6 +72,11 @@ AGENT BEHAVIOR:
   * Check if content is in a different tab or if you need to open a new tab
   * Look for expandable sections, dropdowns, or buttons that might reveal hidden content
   * Try different keywords or approaches if searching
+- VERIFICATION WORKFLOW: After each action (except tab management), you will be asked to verify if the action was successful
+  * Look for expected changes in the page (new content, form updates, navigation, etc.)
+  * If the action worked as expected, use "verified" action to continue
+  * If the action failed or didn't produce expected results, use "retry" action to try a different approach
+  * Be thorough in your verification - check if elements appeared, disappeared, or changed as expected
 - Continue until the task is complete or no further progress is possible
 - Only interact with "interactive" elements (buttons, links, inputs, etc), never "content" elements
 
@@ -102,25 +106,6 @@ To press Enter key on an input field (e.g., to submit a form or trigger search):
   "elementIndex": <number>,
   "message": "Your explanation, reasoning, or any text goes here"
 }
-
-To press specific keys or key combinations (supports multiple keys for combinations like Ctrl+A):
-{
-  "action": "pressKeys",
-  "elementIndex": <number>,
-  "keys": ["key1", "key2"],
-  "message": "Your explanation, reasoning, or any text goes here"
-}
-
-Examples of key combinations:
-- Select all: {"action": "pressKeys", "elementIndex": 5, "keys": ["ctrl", "a"], "message": "Selecting all text"}
-- Copy: {"action": "pressKeys", "elementIndex": 5, "keys": ["ctrl", "c"], "message": "Copying selected content"}
-- Paste: {"action": "pressKeys", "elementIndex": 5, "keys": ["ctrl", "v"], "message": "Pasting content"}
-- Escape: {"action": "pressKeys", "elementIndex": 5, "keys": ["escape"], "message": "Closing modal or canceling action"}
-- Tab: {"action": "pressKeys", "elementIndex": 5, "keys": ["tab"], "message": "Moving to next field"}
-- Arrow keys: {"action": "pressKeys", "elementIndex": 5, "keys": ["arrowdown"], "message": "Navigating down"}
-
-Supported keys include: ctrl/control, shift, alt, meta/cmd, enter, escape/esc, tab, space, backspace, delete, 
-arrowup, arrowdown, arrowleft, arrowright, home, end, pageup, pagedown, and any single character (a-z, 0-9, etc.)
 
 To scroll horizontally:
 {
@@ -154,6 +139,18 @@ To switch to a specific tab:
   "action": "switchTab",
   "tabId": <number>,
   "message": "Your explanation, reasoning, or any text goes here"
+}
+
+To confirm that a previous action was successful (verification step):
+{
+  "action": "verified",
+  "message": "Explanation of what changed and why the action was successful"
+}
+
+To indicate that a previous action failed and needs to be retried (verification step):
+{
+  "action": "retry",
+  "message": "Explanation of what went wrong and why the action failed"
 }
 
 When task is complete or no further action possible:

@@ -568,25 +568,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       sendResponse({ success: false, error: error.message });
     }
     return true; // Keep message channel open for async response
-  } else if (request.action === 'pressKeys') {
-    try {
-      const result = extractInteractiveElements();
-      const elements = result.elements;
-      
-      pressKeysOnElement(request.elementIndex, request.keys, elements)
-        .then(result => {
-          console.log('Press Keys result:', result);
-          sendResponse(result);
-        })
-        .catch(error => {
-          console.error('Press Keys error:', error);
-          sendResponse({ success: false, error: error.message });
-        });
-    } catch (error) {
-      console.error('Press Keys setup error:', error);
-      sendResponse({ success: false, error: error.message });
-    }
-    return true; // Keep message channel open for async response
   } else if (request.action === 'showBoundingBoxes') {
     try {
       const result = showBoundingBoxes();
@@ -907,7 +888,6 @@ function pressEnterOnElement(elementIndex, elements) {
   console.log('Pressing Enter on element:', {
     index: elementIndex,
     tagName: domElement.tagName,
-    type: domElement.type,
     rect: domElement.getBoundingClientRect()
   });
   
@@ -954,6 +934,19 @@ function pressEnterOnElement(elementIndex, elements) {
           domElement.dispatchEvent(keyPressEvent);
           domElement.dispatchEvent(keyUpEvent);
           
+          // For form elements, also try triggering submit on the parent form
+          if (domElement.tagName === 'INPUT' || domElement.tagName === 'TEXTAREA') {
+            const form = domElement.closest('form');
+            if (form) {
+              // Trigger form submit event
+              const submitEvent = new Event('submit', {
+                bubbles: true,
+                cancelable: true
+              });
+              form.dispatchEvent(submitEvent);
+            }
+          }
+          
           resolve({ success: true, message: `Successfully pressed Enter on ${elementInfo.title || elementInfo.tagName}` });
           
         } catch (error) {
@@ -965,182 +958,5 @@ function pressEnterOnElement(elementIndex, elements) {
     
   } catch (error) {
     return Promise.resolve({ success: false, error: `Press Enter setup failed: ${error.message}` });
-  }
-}
-
-function pressKeysOnElement(elementIndex, keys, elements) {
-  if (elementIndex < 0 || elementIndex >= elements.length) {
-    return Promise.resolve({ success: false, error: `Invalid element index ${elementIndex}. Available indices: 0-${elements.length - 1}` });
-  }
-
-  if (!Array.isArray(keys) || keys.length === 0) {
-    return Promise.resolve({ success: false, error: 'Keys parameter must be a non-empty array' });
-  }
-
-  const elementInfo = elements[elementIndex];
-  const domElement = elementInfo.domElement;
-  
-  if (!domElement) {
-    return Promise.resolve({ success: false, error: 'DOM element reference not found in extracted data' });
-  }
-  
-  if (!domElement.isConnected) {
-    return Promise.resolve({ success: false, error: 'Element is no longer in the document' });
-  }
-  
-  console.log('Pressing keys on element:', {
-    index: elementIndex,
-    tagName: domElement.tagName,
-    keys: keys,
-    rect: domElement.getBoundingClientRect()
-  });
-  
-  try {
-    // Scroll element into view first
-    domElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    
-    return new Promise((resolve) => {
-      setTimeout(() => {
-        try {
-          // Focus the element first
-          domElement.focus();
-          
-          // Map common key names to their properties
-          const keyMap = {
-            'ctrl': { key: 'Control', code: 'ControlLeft', keyCode: 17, ctrlKey: true },
-            'control': { key: 'Control', code: 'ControlLeft', keyCode: 17, ctrlKey: true },
-            'shift': { key: 'Shift', code: 'ShiftLeft', keyCode: 16, shiftKey: true },
-            'alt': { key: 'Alt', code: 'AltLeft', keyCode: 18, altKey: true },
-            'meta': { key: 'Meta', code: 'MetaLeft', keyCode: 91, metaKey: true },
-            'cmd': { key: 'Meta', code: 'MetaLeft', keyCode: 91, metaKey: true },
-            'enter': { key: 'Enter', code: 'Enter', keyCode: 13 },
-            'escape': { key: 'Escape', code: 'Escape', keyCode: 27 },
-            'esc': { key: 'Escape', code: 'Escape', keyCode: 27 },
-            'tab': { key: 'Tab', code: 'Tab', keyCode: 9 },
-            'space': { key: ' ', code: 'Space', keyCode: 32 },
-            'backspace': { key: 'Backspace', code: 'Backspace', keyCode: 8 },
-            'delete': { key: 'Delete', code: 'Delete', keyCode: 46 },
-            'arrowup': { key: 'ArrowUp', code: 'ArrowUp', keyCode: 38 },
-            'arrowdown': { key: 'ArrowDown', code: 'ArrowDown', keyCode: 40 },
-            'arrowleft': { key: 'ArrowLeft', code: 'ArrowLeft', keyCode: 37 },
-            'arrowright': { key: 'ArrowRight', code: 'ArrowRight', keyCode: 39 },
-            'home': { key: 'Home', code: 'Home', keyCode: 36 },
-            'end': { key: 'End', code: 'End', keyCode: 35 },
-            'pageup': { key: 'PageUp', code: 'PageUp', keyCode: 33 },
-            'pagedown': { key: 'PageDown', code: 'PageDown', keyCode: 34 }
-          };
-          
-          // Process keys and determine modifiers
-          let ctrlKey = false, shiftKey = false, altKey = false, metaKey = false;
-          const keysToPress = [];
-          
-          keys.forEach(key => {
-            const lowerKey = key.toLowerCase();
-            const keyInfo = keyMap[lowerKey];
-            
-            if (keyInfo) {
-              if (keyInfo.ctrlKey) ctrlKey = true;
-              else if (keyInfo.shiftKey) shiftKey = true;
-              else if (keyInfo.altKey) altKey = true;
-              else if (keyInfo.metaKey) metaKey = true;
-              else keysToPress.push(keyInfo);
-            } else {
-              // Handle single character keys or letter keys
-              if (key.length === 1) {
-                const charCode = key.toUpperCase().charCodeAt(0);
-                keysToPress.push({
-                  key: key,
-                  code: `Key${key.toUpperCase()}`,
-                  keyCode: charCode
-                });
-              } else {
-                // Unknown key, try as-is
-                keysToPress.push({
-                  key: key,
-                  code: key,
-                  keyCode: 0
-                });
-              }
-            }
-          });
-          
-          // If no non-modifier keys were specified, and we have modifiers, add a default key
-          if (keysToPress.length === 0 && (ctrlKey || shiftKey || altKey || metaKey)) {
-            console.warn('Only modifier keys specified, no action key found');
-          }
-          
-          // Create and dispatch keyboard events for each key
-          keysToPress.forEach((keyInfo, index) => {
-            setTimeout(() => {
-              try {
-                // Key down event
-                const keyDownEvent = new KeyboardEvent('keydown', {
-                  key: keyInfo.key,
-                  code: keyInfo.code,
-                  keyCode: keyInfo.keyCode,
-                  which: keyInfo.keyCode,
-                  ctrlKey: ctrlKey,
-                  shiftKey: shiftKey,
-                  altKey: altKey,
-                  metaKey: metaKey,
-                  bubbles: true,
-                  cancelable: true
-                });
-                
-                // Key press event (for character keys)
-                const keyPressEvent = new KeyboardEvent('keypress', {
-                  key: keyInfo.key,
-                  code: keyInfo.code,
-                  keyCode: keyInfo.keyCode,
-                  which: keyInfo.keyCode,
-                  ctrlKey: ctrlKey,
-                  shiftKey: shiftKey,
-                  altKey: altKey,
-                  metaKey: metaKey,
-                  bubbles: true,
-                  cancelable: true
-                });
-                
-                // Key up event
-                const keyUpEvent = new KeyboardEvent('keyup', {
-                  key: keyInfo.key,
-                  code: keyInfo.code,
-                  keyCode: keyInfo.keyCode,
-                  which: keyInfo.keyCode,
-                  ctrlKey: ctrlKey,
-                  shiftKey: shiftKey,
-                  altKey: altKey,
-                  metaKey: metaKey,
-                  bubbles: true,
-                  cancelable: true
-                });
-                
-                // Dispatch events in sequence
-                domElement.dispatchEvent(keyDownEvent);
-                if (keyInfo.key.length === 1) {
-                  domElement.dispatchEvent(keyPressEvent);
-                }
-                domElement.dispatchEvent(keyUpEvent);
-                
-                console.log(`Dispatched key events for: ${keyInfo.key} (with modifiers: ctrl=${ctrlKey}, shift=${shiftKey}, alt=${altKey}, meta=${metaKey})`);
-                
-              } catch (keyError) {
-                console.error(`Failed to dispatch key ${keyInfo.key}:`, keyError);
-              }
-            }, index * 50); // Small delay between keys
-          });
-          
-          const keysString = keys.join('+');
-          resolve({ success: true, message: `Successfully pressed keys [${keysString}] on ${elementInfo.title || elementInfo.tagName}` });
-          
-        } catch (error) {
-          console.error('Press Keys failed:', error);
-          resolve({ success: false, error: `Press Keys failed: ${error.message}` });
-        }
-      }, 300); // Wait for scroll to complete
-    });
-    
-  } catch (error) {
-    return Promise.resolve({ success: false, error: `Press Keys setup failed: ${error.message}` });
   }
 }
