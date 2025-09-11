@@ -12,6 +12,7 @@
   const sendBtn = document.getElementById('send-btn');
   const clearBtn = document.getElementById('clear-btn');
   const modelSelector = document.getElementById('model-selector');
+  const boundingBoxToggle = document.getElementById('bounding-box-toggle');
   const status = document.getElementById('status');
   const currentUrl = document.getElementById('current-url');
 
@@ -27,6 +28,7 @@
   function setupEventListeners() {
     sendBtn.addEventListener('click', handleSendMessage);
     clearBtn.addEventListener('click', clearChat);
+    boundingBoxToggle.addEventListener('change', handleBoundingBoxToggle);
     
     chatInput.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && !e.shiftKey) {
@@ -53,6 +55,21 @@
     } catch (error) {
       console.error('Error getting current tab:', error);
       updateStatus('Error connecting to tab');
+    }
+  }
+
+  async function handleBoundingBoxToggle() {
+    if (!currentTabId) {
+      await getCurrentTabInfo();
+      if (!currentTabId) {
+        return;
+      }
+    }
+
+    if (boundingBoxToggle.checked) {
+      chrome.tabs.sendMessage(currentTabId, { action: 'showBoundingBoxes' });
+    } else {
+      chrome.tabs.sendMessage(currentTabId, { action: 'clearBoundingBoxes' });
     }
   }
 
