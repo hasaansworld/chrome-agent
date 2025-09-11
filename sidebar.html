@@ -249,6 +249,102 @@
         input:checked + .toggle-slider:before {
             transform: translateX(20px);
         }
+        
+        .todo-section {
+            background: white;
+            border-bottom: 1px solid #e2e8f0;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+        
+        .todo-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 12px;
+            background: #f8f9fa;
+            border-bottom: 1px solid #e2e8f0;
+        }
+        
+        .todo-header h3 {
+            font-size: 13px;
+            font-weight: 600;
+            color: #2d3748;
+            margin: 0;
+        }
+        
+        .clear-todos-btn {
+            padding: 2px 8px;
+            background: #e53e3e;
+            color: white;
+            border: none;
+            border-radius: 3px;
+            font-size: 10px;
+            cursor: pointer;
+        }
+        
+        .clear-todos-btn:hover {
+            background: #c53030;
+        }
+        
+        .todo-list {
+            padding: 8px 12px;
+        }
+        
+        .todo-item {
+            display: flex;
+            align-items: center;
+            padding: 4px 0;
+            font-size: 11px;
+            color: #4a5568;
+        }
+        
+        .todo-item.completed {
+            text-decoration: line-through;
+            color: #a0aec0;
+        }
+        
+        .todo-item.in-progress {
+            color: #3182ce;
+            font-weight: 500;
+        }
+        
+        .todo-status {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 6px;
+            flex-shrink: 0;
+        }
+        
+        .todo-status.pending {
+            background: #e2e8f0;
+            border: 2px solid #cbd5e0;
+        }
+        
+        .todo-status.in-progress {
+            background: #3182ce;
+            animation: pulse 1.5s ease-in-out infinite alternate;
+        }
+        
+        .todo-status.completed {
+            background: #38a169;
+            position: relative;
+        }
+        
+        .todo-status.completed::after {
+            content: '✓';
+            color: white;
+            font-size: 8px;
+            position: absolute;
+            top: -1px;
+            left: 2px;
+        }
+        
+        @keyframes pulse {
+            from { opacity: 0.6; }
+            to { opacity: 1.0; }
+        }
     </style>
 </head>
 <body>
@@ -280,6 +376,14 @@
         </label>
     </div>
     
+    <div class="todo-section" id="todo-section" style="display: none;">
+        <div class="todo-header">
+            <h3>🎯 Agent Task List</h3>
+            <button id="clear-todos" class="clear-todos-btn">Clear</button>
+        </div>
+        <div class="todo-list" id="todo-list"></div>
+    </div>
+
     <div class="chat-messages" id="chat-messages">
         <div class="message system">
             <div class="message-header">System</div>

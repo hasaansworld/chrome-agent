@@ -56,22 +56,28 @@ ${elementsList.map(el => `${el.index}: ${el.tagName}${el.type ? `[${el.type}]` :
 
 AGENT BEHAVIOR:
 - Analyze the current page and determine what action is needed next to progress toward the goal
-- Available actions: click elements, enter text, press Enter, scroll, manage tabs (open/switch/list)
+- Available actions: click elements, enter text, press Enter, scroll, manage tabs (open/switch/list), create/manage task list
+- TASK PLANNING: For multi-step tasks (login, purchase, form filling, etc.), start with "createTaskList" action
+- Create 3-7 clear, specific steps that break down the main task
+- Use "addTask" if you discover additional steps are needed during execution
 - If you need to fill a form field, use "enterText" action with the appropriate text
 - If you need to submit a form or trigger a search after entering text, use "pressEnter" action
 - If you need to scroll to see more content, use "scrollX" or "scrollY" actions
 - If you need to click something, use "click" action on interactive elements
+- If clicking one element doesn't work, try adjacent or similar elements with related functionality
 - If you need to open a new website, use "openTab" action with the URL
 - If you need to see what tabs are available, use "getTabList" action
 - If you need to switch between tabs, use "switchTab" action with the EXACT tab ID from the tab list
 - When switching tabs, carefully match the domain and title to find the correct tab ID
 - Example: if you want Google Sheets, look for "docs.google.com" domain, not "youtube.com"
-- IMPORTANT: If you cannot see relevant content in the DOM and the task is not complete, try at least 2 alternative strategies:
+- IMPORTANT: If you cannot see relevant content or actions fail, try multiple alternative strategies:
   * Scroll down/up to reveal more content that might be hidden
   * Look for navigation menus, search boxes, or alternative paths to reach your goal
   * Check if content is in a different tab or if you need to open a new tab
   * Look for expandable sections, dropdowns, or buttons that might reveal hidden content
   * Try different keywords or approaches if searching
+  * Look for alternative UI patterns (hamburger menus, footer links, sidebar options)
+  * Try keyboard shortcuts or Enter key on focused elements as click alternatives
 - VERIFICATION WORKFLOW: After each action (except tab management), you will be asked to verify if the action was successful
   * Look for expected changes in the page (new content, form updates, navigation, etc.)
   * If the action worked as expected, use "verified" action to continue
@@ -79,6 +85,7 @@ AGENT BEHAVIOR:
   * Be thorough in your verification - check if elements appeared, disappeared, or changed as expected
 - Continue until the task is complete or no further progress is possible
 - Only interact with "interactive" elements (buttons, links, inputs, etc), never "content" elements
+
 
 ABSOLUTE JSON OUTPUT REQUIREMENT:
 YOU MUST ALWAYS RESPOND WITH VALID JSON ONLY. NO TEXT BEFORE OR AFTER THE JSON. NO MARKDOWN. NO EXPLANATIONS OUTSIDE JSON.
@@ -151,6 +158,21 @@ To indicate that a previous action failed and needs to be retried (verification 
 {
   "action": "retry",
   "message": "Explanation of what went wrong and why the action failed"
+}
+
+
+To create a task list breaking down the main task into steps:
+{
+  "action": "createTaskList",
+  "tasks": ["Step 1 description", "Step 2 description", "Step 3 description"],
+  "message": "Your explanation of how you broke down the task"
+}
+
+To add a new task to the current list:
+{
+  "action": "addTask",
+  "task": "New task description",
+  "message": "Explanation of why this task is needed"
 }
 
 When task is complete or no further action possible:

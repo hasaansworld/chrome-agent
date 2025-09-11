@@ -15,6 +15,12 @@
   const boundingBoxToggle = document.getElementById("bounding-box-toggle");
   const status = document.getElementById("status");
   const currentUrl = document.getElementById("current-url");
+  const todoSection = document.getElementById("todo-section");
+  const todoList = document.getElementById("todo-list");
+  const clearTodosBtn = document.getElementById("clear-todos");
+
+  // Todo list management
+  let agentTodos = [];
 
   // Initialize
   document.addEventListener("DOMContentLoaded", init);
@@ -29,6 +35,7 @@
     sendBtn.addEventListener("click", handleSendMessage);
     clearBtn.addEventListener("click", clearChat);
     boundingBoxToggle.addEventListener("change", handleBoundingBoxToggle);
+    clearTodosBtn.addEventListener("click", clearTodos);
 
     chatInput.addEventListener("keydown", (e) => {
       if (e.key === "Enter" && !e.shiftKey) {
@@ -251,7 +258,34 @@
         addMessage("assistant", displayMessage);
 
         // Check if we should continue
-        if (jsonResponse.action === "none") {
+        if (jsonResponse.action === "createTaskList") {
+          // Agent wants to create its own task list
+          clearTodos();
+          if (jsonResponse.tasks && Array.isArray(jsonResponse.tasks)) {
+            jsonResponse.tasks.forEach(task => addTodo(task));
+            addMessage("system", `📝 Agent created task list: ${jsonResponse.message}`);
+          } else {
+            addMessage("system", "❌ Invalid task list format from agent");
+            break;
+          }
+          continue;
+        } else if (jsonResponse.action === "addTask") {
+          // Agent wants to add a new task
+          if (jsonResponse.task) {
+            addTodo(jsonResponse.task);
+            addMessage("system", `➕ Added new task: ${jsonResponse.message}`);
+          } else {
+            addMessage("system", "❌ Invalid task format from agent");
+            break;
+          }
+          continue;
+        } else if (jsonResponse.action === "none") {
+          // Complete any remaining todos
+          agentTodos.forEach(todo => {
+            if (todo.status !== 'completed') {
+              updateTodoStatus(todo.id, 'completed');
+            }
+          });
           addMessage(
             "system",
             `🎯 Agent completed task: ${jsonResponse.message}`
@@ -263,6 +297,8 @@
             "system",
             `✅ Verification successful: ${jsonResponse.message}`
           );
+          // Mark current todo as completed
+          markCurrentTodoCompleted();
           isVerificationStep = false;
           lastActionExecuted = null;
           addMessage("system", `⏭️ Proceeding to next action...`);
@@ -289,6 +325,8 @@
 
           if (clickResult.success) {
             addMessage("system", `✓ Clicked element: ${clickResult.message}`);
+            // Mark current todo as in progress
+            markCurrentTodoInProgress('click');
             // Set up for verification step
             lastActionExecuted = {
               action: "click",
@@ -801,6 +839,142 @@
       </div>
     `;
     conversationHistory = [];
+  }
+
+  // Todo list functions
+  function addTodo(task, status = 'pending') {
+    const todo = {
+      id: Date.now(),
+      task: task,
+      status: status, // pending, in-progress, completed
+      createdAt: new Date()
+    };
+    agentTodos.push(todo);
+    updateTodoDisplay();
+    showTodoSection();
+  }
+
+  function updateTodoStatus(id, status) {
+    const todo = agentTodos.find(t => t.id === id);
+    if (todo) {
+      todo.status = status;
+      updateTodoDisplay();
+    }
+  }
+
+  function updateTodoByTask(taskText, status) {
+    const todo = agentTodos.find(t => t.task.toLowerCase().includes(taskText.toLowerCase()));
+    if (todo) {
+      todo.status = status;
+      updateTodoDisplay();
+    }
+  }
+
+  function clearTodos() {
+    agentTodos = [];
+    updateTodoDisplay();
+    hideTodoSection();
+  }
+
+  function showTodoSection() {
+    todoSection.style.display = 'block';
+  }
+
+  function hideTodoSection() {
+    todoSection.style.display = 'none';
+  }
+
+  function updateTodoDisplay() {
+    if (agentTodos.length === 0) {
+      hideTodoSection();
+      return;
+    }
+
+    todoList.innerHTML = agentTodos.map(todo => `
+      <div class="todo-item ${todo.status}" data-id="${todo.id}">
+        <div class="todo-status ${todo.status}"></div>
+        <span class="todo-text">${todo.task}</span>
+      </div>
+    `).join('');
+    
+    showTodoSection();
+  }
+
+  // Agent todo integration functions
+  function createAgentTodoList(initialTask) {
+    clearTodos();
+    
+    // Break down the initial task into subtasks
+    const subtasks = generateSubtasks(initialTask);
+    subtasks.forEach(task => addTodo(task));
+    
+    addMessage("system", `📝 Created task list with ${subtasks.length} steps`);
+  }
+
+  function generateSubtasks(task) {
+    const taskLower = task.toLowerCase();
+    const subtasks = [];
+    
+    // Common task patterns and their subtasks
+    if (taskLower.includes('login') || taskLower.includes('sign in')) {
+      subtasks.push('Find login form or button');
+      subtasks.push('Enter username/email');
+      subtasks.push('Enter password');
+      subtasks.push('Submit login form');
+      subtasks.push('Verify successful login');
+    } else if (taskLower.includes('search')) {
+      subtasks.push('Locate search box');
+      subtasks.push('Enter search query');
+      subtasks.push('Submit search');
+      subtasks.push('Review search results');
+    } else if (taskLower.includes('fill') && taskLower.includes('form')) {
+      subtasks.push('Locate form fields');
+      subtasks.push('Fill out required information');
+      subtasks.push('Review form data');
+      subtasks.push('Submit form');
+    } else if (taskLower.includes('navigate') || taskLower.includes('go to')) {
+      subtasks.push('Find navigation element');
+      subtasks.push('Click navigation item');
+      subtasks.push('Wait for page load');
+      subtasks.push('Verify correct page');
+    } else if (taskLower.includes('buy') || taskLower.includes('purchase') || taskLower.includes('order')) {
+      subtasks.push('Find product/service');
+      subtasks.push('Add to cart');
+      subtasks.push('Go to checkout');
+      subtasks.push('Fill payment details');
+      subtasks.push('Complete purchase');
+    } else if (taskLower.includes('download')) {
+      subtasks.push('Find download link/button');
+      subtasks.push('Click download');
+      subtasks.push('Verify download started');
+    } else if (taskLower.includes('upload')) {
+      subtasks.push('Find file upload area');
+      subtasks.push('Select file to upload');
+      subtasks.push('Confirm upload');
+      subtasks.push('Verify upload success');
+    } else {
+      // Generic task breakdown
+      subtasks.push('Analyze page content');
+      subtasks.push('Identify required elements');
+      subtasks.push('Execute main action');
+      subtasks.push('Verify task completion');
+    }
+    
+    return subtasks;
+  }
+
+  function markCurrentTodoInProgress(actionType) {
+    const pendingTodo = agentTodos.find(t => t.status === 'pending');
+    if (pendingTodo) {
+      updateTodoStatus(pendingTodo.id, 'in-progress');
+    }
+  }
+
+  function markCurrentTodoCompleted() {
+    const inProgressTodo = agentTodos.find(t => t.status === 'in-progress');
+    if (inProgressTodo) {
+      updateTodoStatus(inProgressTodo.id, 'completed');
+    }
   }
 
   function setControlsEnabled(enabled) {
