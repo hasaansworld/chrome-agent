@@ -4,15 +4,26 @@ async function runAutonomousAgent(initialMessage) {
   let stepCount = 0;
   const maxSteps = 20;
 
-  addMessage("system", `🤖 Starting autonomous agent for task: "${initialMessage}"`);
+  addMessage(
+    "system",
+    `🤖 Starting autonomous agent for task: "${initialMessage}"`
+  );
 
   // Start with the first action step
   await executeActionStep(initialMessage, stepCount, maxSteps);
 }
 
-async function executeActionStep(taskMessage, stepCount, maxSteps, lastActionResult = null) {
+async function executeActionStep(
+  taskMessage,
+  stepCount,
+  maxSteps,
+  lastActionResult = null
+) {
   if (stepCount >= maxSteps) {
-    addMessage("system", `⚠️ Agent reached maximum steps (${maxSteps}), stopping for safety`);
+    addMessage(
+      "system",
+      `⚠️ Agent reached maximum steps (${maxSteps}), stopping for safety`
+    );
     return;
   }
 
@@ -35,7 +46,9 @@ async function executeActionStep(taskMessage, stepCount, maxSteps, lastActionRes
     } else if (lastActionResult === "retry") {
       contextMessage = `Task: ${taskMessage}. The previous action verification failed. Analyze the current page state and try a different approach.`;
     } else {
-      contextMessage = `Continue with task: ${taskMessage}. You have completed ${Math.floor((stepCount - 1) / 2)} verified actions. Analyze the current page state and determine what to do next.`;
+      contextMessage = `Continue with task: ${taskMessage}. You have completed ${Math.floor(
+        (stepCount - 1) / 2
+      )} verified actions. Analyze the current page state and determine what to do next.`;
     }
 
     addMessage("user", contextMessage);
@@ -53,7 +66,10 @@ async function executeActionStep(taskMessage, stepCount, maxSteps, lastActionRes
     try {
       jsonResponse = JSON.parse(response);
     } catch (parseError) {
-      addMessage("system", `❌ Invalid JSON response: ${response.substring(0, 200)}...`);
+      addMessage(
+        "system",
+        `❌ Invalid JSON response: ${response.substring(0, 200)}...`
+      );
       return;
     }
 
@@ -69,7 +85,10 @@ async function executeActionStep(taskMessage, stepCount, maxSteps, lastActionRes
     // Execute the action
     const actionSuccess = await executeAction(jsonResponse, currentTabId);
     if (!actionSuccess) {
-      addMessage("system", "❌ Action execution failed, trying different approach");
+      addMessage(
+        "system",
+        "❌ Action execution failed, trying different approach"
+      );
       // Retry with same step count (don't increment)
       await executeActionStep(taskMessage, stepCount - 1, maxSteps, "retry");
       return;
@@ -77,11 +96,17 @@ async function executeActionStep(taskMessage, stepCount, maxSteps, lastActionRes
 
     // Wait for page updates
     addMessage("system", "🕰️ Waiting for page updates...");
-    await new Promise(resolve => setTimeout(resolve, getActionDelay(jsonResponse.action)));
+    await new Promise((resolve) =>
+      setTimeout(resolve, getActionDelay(jsonResponse.action))
+    );
 
     // Now call verification step
-    await executeVerificationStep(taskMessage, stepCount, maxSteps, jsonResponse);
-
+    await executeVerificationStep(
+      taskMessage,
+      stepCount,
+      maxSteps,
+      jsonResponse
+    );
   } catch (error) {
     console.error("Action step failed:", error);
     addMessage("system", `❌ Agent error: ${error.message}`);
@@ -89,7 +114,12 @@ async function executeActionStep(taskMessage, stepCount, maxSteps, lastActionRes
   }
 }
 
-async function executeVerificationStep(taskMessage, stepCount, maxSteps, lastAction) {
+async function executeVerificationStep(
+  taskMessage,
+  stepCount,
+  maxSteps,
+  lastAction
+) {
   try {
     // ALWAYS get fresh DOM before verification
     addMessage("system", "🔄 Getting fresh page state for verification...");
@@ -101,7 +131,9 @@ async function executeVerificationStep(taskMessage, stepCount, maxSteps, lastAct
     }
 
     // Build verification context message
-    const contextMessage = `VERIFICATION STEP: You just executed: ${JSON.stringify(lastAction)}.
+    const contextMessage = `VERIFICATION STEP: You just executed: ${JSON.stringify(
+      lastAction
+    )}.
 
 IMPORTANT: Look ONLY at the current DOM elements to verify if the action worked.
 
@@ -155,49 +187,85 @@ If verification FAILED, set action to "retry" and suggest a different approach i
     try {
       jsonResponse = JSON.parse(response);
     } catch (parseError) {
-      addMessage("system", `❌ Invalid verification JSON response: ${response.substring(0, 200)}...`);
+      addMessage(
+        "system",
+        `❌ Invalid verification JSON response: ${response.substring(
+          0,
+          200
+        )}...`
+      );
       return;
     }
 
     conversationHistory.push({ role: "assistant", content: response });
-    addMessage("assistant", jsonResponse.message || "No verification message provided");
+    addMessage(
+      "assistant",
+      jsonResponse.message || "No verification message provided"
+    );
 
     // Handle verification result
     if (jsonResponse.action === "verified") {
       addMessage("system", `✅ Verification passed: ${jsonResponse.message}`);
-      
+
       // Execute the suggested next action
-      if (jsonResponse.nextAction && jsonResponse.nextAction.action !== "none") {
+      if (
+        jsonResponse.nextAction &&
+        jsonResponse.nextAction.action !== "none"
+      ) {
         // Call next action step recursively
-        await executeNextAction(taskMessage, stepCount, maxSteps, jsonResponse.nextAction);
+        await executeNextAction(
+          taskMessage,
+          stepCount,
+          maxSteps,
+          jsonResponse.nextAction
+        );
       } else {
-        addMessage("system", `🎯 Task completed: ${jsonResponse.nextAction?.message || "No further actions needed"}`);
+        addMessage(
+          "system",
+          `🎯 Task completed: ${
+            jsonResponse.nextAction?.message || "No further actions needed"
+          }`
+        );
       }
     } else if (jsonResponse.action === "retry") {
-      addMessage("system", `⚠️ Verification failed: ${jsonResponse.message}`);
-      
+      addMessage("system", `⚠️ Verification failed`);
+
       // Try the suggested retry action
       if (jsonResponse.nextAction) {
-        await executeNextAction(taskMessage, stepCount - 1, maxSteps, jsonResponse.nextAction, "retry");
+        await executeNextAction(
+          taskMessage,
+          stepCount - 1,
+          maxSteps,
+          jsonResponse.nextAction,
+          "retry"
+        );
       } else {
         addMessage("system", "❌ No retry action suggested, stopping");
       }
     } else {
       addMessage("system", "❌ Invalid verification response");
     }
-
   } catch (error) {
     console.error("Verification step failed:", error);
     addMessage("system", `❌ Verification error: ${error.message}`);
   }
 }
 
-async function executeNextAction(taskMessage, stepCount, maxSteps, actionData, context = null) {
+async function executeNextAction(
+  taskMessage,
+  stepCount,
+  maxSteps,
+  actionData,
+  context = null
+) {
   try {
     // Execute the action
     const actionSuccess = await executeAction(actionData, currentTabId);
     if (!actionSuccess) {
-      addMessage("system", "❌ Next action execution failed, trying different approach");
+      addMessage(
+        "system",
+        "❌ Next action execution failed, trying different approach"
+      );
       // Go back to action step to try something different
       await executeActionStep(taskMessage, stepCount, maxSteps, "retry");
       return;
@@ -205,11 +273,17 @@ async function executeNextAction(taskMessage, stepCount, maxSteps, actionData, c
 
     // Wait for page updates
     addMessage("system", "🕰️ Waiting for page updates...");
-    await new Promise(resolve => setTimeout(resolve, getActionDelay(actionData.action)));
+    await new Promise((resolve) =>
+      setTimeout(resolve, getActionDelay(actionData.action))
+    );
 
     // Now call verification for this action
-    await executeVerificationStep(taskMessage, stepCount + 1, maxSteps, actionData);
-
+    await executeVerificationStep(
+      taskMessage,
+      stepCount + 1,
+      maxSteps,
+      actionData
+    );
   } catch (error) {
     console.error("Next action failed:", error);
     addMessage("system", `❌ Next action error: ${error.message}`);
