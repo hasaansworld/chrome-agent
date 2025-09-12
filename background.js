@@ -15,18 +15,29 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     (async () => {
       try {
         let screenshot = null;
-        
+
         // Try to capture screenshot, but don't fail if it doesn't work
         let screenshotStatus = "not_attempted";
         let screenshotTime = 0;
         try {
           const tabId = request.tabId || (sender.tab && sender.tab.id);
           if (tabId) {
-            console.log("Attempting to capture screenshot for tab:", tabId, "from request.tabId:", request.tabId);
-            
+            console.log(
+              "Attempting to capture screenshot for tab:",
+              tabId,
+              "from request.tabId:",
+              request.tabId
+            );
+
             // Check if tab URL is accessible for screenshots
             const tab = await chrome.tabs.get(tabId);
-            if (!tab.url || tab.url.startsWith('chrome://') || tab.url.startsWith('chrome-extension://') || tab.url.startsWith('moz-extension://') || tab.url === '') {
+            if (
+              !tab.url ||
+              tab.url.startsWith("chrome://") ||
+              tab.url.startsWith("chrome-extension://") ||
+              tab.url.startsWith("moz-extension://") ||
+              tab.url === ""
+            ) {
               console.log("Tab URL not accessible for screenshots:", tab.url);
               screenshotStatus = "restricted_url";
               screenshotTime = 0;
@@ -35,12 +46,23 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
               const screenshotStart = performance.now();
               screenshot = await captureTabScreenshot(tabId);
               screenshotTime = Math.round(performance.now() - screenshotStart);
-              
-              console.log("Screenshot captured successfully, length:", screenshot ? screenshot.length : 'null', "Time:", screenshotTime + "ms");
+
+              console.log(
+                "Screenshot captured successfully, length:",
+                screenshot ? screenshot.length : "null",
+                "Time:",
+                screenshotTime + "ms"
+              );
               screenshotStatus = "success";
             }
           } else {
-            console.log("No tab ID available for screenshot (sender.tab:", sender.tab, "request.tabId:", request.tabId, ")");
+            console.log(
+              "No tab ID available for screenshot (sender.tab:",
+              sender.tab,
+              "request.tabId:",
+              request.tabId,
+              ")"
+            );
             screenshotStatus = "no_tab";
           }
         } catch (screenshotError) {
@@ -48,26 +70,42 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           screenshotStatus = "failed";
           screenshotTime = 0;
         }
-        
+
         // Call OpenAI API with or without screenshot
         const apiStart = performance.now();
         const response = await callOpenAIAPI(
-          request.message, 
-          request.elements || [], 
-          request.conversationHistory || [], 
-          request.model || 'gpt-4o-2024-11-20',
+          request.message,
+          request.elements || [],
+          request.conversationHistory || [],
+          request.model || "gpt-4o-2024-11-20",
           screenshot
         );
         const apiTime = Math.round(performance.now() - apiStart);
-        
-        console.log("Sending response with screenshotStatus:", screenshotStatus, "Timings - Screenshot:", screenshotTime + "ms", "API:", apiTime + "ms");
-        sendResponse({ success: true, response, screenshotStatus, timings: { screenshot: screenshotTime, api: apiTime } });
+
+        console.log(
+          "Sending response with screenshotStatus:",
+          screenshotStatus,
+          "Timings - Screenshot:",
+          screenshotTime + "ms",
+          "API:",
+          apiTime + "ms"
+        );
+        sendResponse({
+          success: true,
+          response,
+          screenshotStatus,
+          screenshotData: screenshot, // Include the actual screenshot data
+          timings: { screenshot: screenshotTime, api: apiTime },
+        });
       } catch (error) {
         console.error("Error in API call:", error);
-        sendResponse({ success: false, error: error.message || "Unknown error occurred" });
+        sendResponse({
+          success: false,
+          error: error.message || "Unknown error occurred",
+        });
       }
     })();
-    
+
     return true; // Keep the message channel open for async response
   }
 });
@@ -75,29 +113,36 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 async function captureTabScreenshot(tabId) {
   try {
     console.log("Attempting to capture screenshot for tab:", tabId);
-    
+
     // Make sure the tab exists and is active
     const tab = await chrome.tabs.get(tabId);
     if (!tab) {
       throw new Error(`Tab ${tabId} not found`);
     }
-    
-    console.log("Tab found:", tab.url, "Active:", tab.active, "WindowId:", tab.windowId);
-    
+
+    console.log(
+      "Tab found:",
+      tab.url,
+      "Active:",
+      tab.active,
+      "WindowId:",
+      tab.windowId
+    );
+
     // Make sure the tab AND window are focused
     if (!tab.active) {
       console.log("Tab not active, activating and focusing window");
-      
+
       // Focus the window first
       await chrome.windows.update(tab.windowId, { focused: true });
-      
+
       // Then activate the tab
       await chrome.tabs.update(tabId, { active: true });
-      
+
       // Get updated tab info
       const updatedTab = await chrome.tabs.get(tabId);
       console.log("Updated tab active status:", updatedTab.active);
-      
+
       // Double-check window focus
       const window = await chrome.windows.get(tab.windowId);
       console.log("Window focused:", window.focused);
@@ -109,27 +154,33 @@ async function captureTabScreenshot(tabId) {
         await chrome.windows.update(tab.windowId, { focused: true });
       }
     }
-    
+
     try {
       // Try to capture from the specific window that contains our tab
       const screenshot = await chrome.tabs.captureVisibleTab(tab.windowId, {
-        format: 'png',
-        quality: 90
+        format: "png",
+        quality: 90,
       });
-      
-      console.log("Screenshot captured successfully, length:", screenshot.length);
+
+      console.log(
+        "Screenshot captured successfully, length:",
+        screenshot.length
+      );
       return screenshot;
     } catch (permissionError) {
-      if (permissionError.message.includes('permission')) {
+      if (permissionError.message.includes("permission")) {
         console.log("Permission error, trying alternative approach");
-        
+
         // Try capturing from current window (null parameter)
         const screenshot = await chrome.tabs.captureVisibleTab(null, {
-          format: 'png',
-          quality: 90
+          format: "png",
+          quality: 90,
         });
-        
-        console.log("Screenshot captured with fallback method, length:", screenshot.length);
+
+        console.log(
+          "Screenshot captured with fallback method, length:",
+          screenshot.length
+        );
         return screenshot;
       } else {
         throw permissionError;
@@ -141,9 +192,16 @@ async function captureTabScreenshot(tabId) {
   }
 }
 
-async function callOpenAIAPI(message, elements = [], conversationHistory = [], model = 'gpt-4o-2024-11-20', screenshot = null) {
+async function callOpenAIAPI(
+  message,
+  elements = [],
+  conversationHistory = [],
+  model = "gpt-4o-2024-11-20",
+  screenshot = null
+) {
   // Read API key from environment - Note: In Chrome extension, you would need to read from storage or inject it
-  const API_KEY = "REMOVED_OPENAI_KEY";
+  const API_KEY =
+    "REMOVED_OPENAI_KEY";
 
   if (!API_KEY || API_KEY === "your-openai-api-key-here") {
     throw new Error(
@@ -163,7 +221,7 @@ async function callOpenAIAPI(message, elements = [], conversationHistory = [], m
     title: el.title,
     type: el.type,
     href: el.href,
-    elementType: el.elementType
+    elementType: el.elementType,
   }));
 
   const systemPrompt = `You are an autonomous web automation agent. You will be provided with task instructions, a screenshot of the current page, and HTML DOM content. Your job is to analyze the current page state and determine the next action needed to complete the task.
@@ -179,7 +237,14 @@ CRITICAL: ALWAYS refer to the screenshot to understand the current UI state befo
 - The screenshot shows the REAL current state - trust it over assumptions
 
 Available DOM elements:
-${elementsList.map(el => `${el.index}: ${el.tagName}${el.type ? `[${el.type}]` : ''} - "${el.title}" (${el.elementType})`).join('\n')}
+${elementsList
+  .map(
+    (el) =>
+      `${el.index}: ${el.tagName}${el.type ? `[${el.type}]` : ""} - "${
+        el.title
+      }" (${el.elementType})`
+  )
+  .join("\n")}
 
 AGENT BEHAVIOR:
 - You are provided with both a SCREENSHOT and DOM elements that describe the current page state
@@ -187,8 +252,9 @@ AGENT BEHAVIOR:
 - Use the DOM element information to understand the page structure and available interactions
 - Cross-reference the visual information with the DOM element list to make precise action decisions
 - Analyze the current page and determine what action is needed next to progress toward the goal
+- ** IMPORTANT: ALWAYS use the screenshot to verify if the previous action succeeded before continuing to the next action **
 - Available actions: click elements, enter text, press Enter, scroll, manage tabs (open/switch/list)
-- If you need to fill a form field, use "enterText" action with the appropriate text
+- If you need to fill a form field, use "enterText" action with the appropriate text. Click the field to focusi it before entering text
 - If you need to submit a form or trigger a search after entering text, use "pressEnter" action
 - If you need to scroll to see more content, use "scrollX" or "scrollY" actions
 - If you need to click something, use "click" action on interactive elements
@@ -222,9 +288,8 @@ PERSISTENCE AND DETERMINATION:
 EXECUTION FLOW:
 - Take one action at a time based on the current page state
 - After each action, you will see the next page state and can decide the next action
-- System messages will tell you if actions succeeded or failed
+- You have to check the screenshot to see if previous action succeeded or not. If not retry it.
 - Continue until the task is complete
-- Only interact with "interactive" elements (buttons, links, inputs, etc), never "content" elements
 
 
 ABSOLUTE JSON OUTPUT REQUIREMENT:
@@ -236,6 +301,7 @@ To click an element:
 {
   "action": "click",
   "elementIndex": <number>,
+  "elementText": "Expected text content of the element",
   "message": "Your explanation, reasoning, or any text goes here"
 }
 
@@ -326,14 +392,14 @@ INVALID EXAMPLES (DO NOT DO THIS):
 - "Here is my response: {"action": "click"...}"
 
 VALID EXAMPLE:
-{"action": "click", "elementIndex": 5, "message": "I identified the login button and will click it to proceed with authentication"}`;
+{"action": "click", "elementIndex": 5, "elementText": "Login", "message": "I identified the login button and will click it to proceed with authentication"}`;
 
   // Build messages array: system prompt first, then conversation history, then current user message
   const messages = [
     {
       role: "system",
       content: systemPrompt,
-    }
+    },
   ];
 
   // Add all conversation history except the last message (which should be the current user message)
@@ -350,16 +416,16 @@ VALID EXAMPLE:
       content: [
         {
           type: "text",
-          text: message
+          text: message,
         },
         {
           type: "image_url",
           image_url: {
             url: screenshot,
-            detail: "high"
-          }
-        }
-      ]
+            detail: "high",
+          },
+        },
+      ],
     });
   } else {
     messages.push({
@@ -370,7 +436,7 @@ VALID EXAMPLE:
 
   const requestBody = {
     model: model,
-    max_tokens: 2000,  // Increased token limit for better responses
+    max_tokens: 2000, // Increased token limit for better responses
     messages: messages,
   };
 
@@ -384,7 +450,7 @@ VALID EXAMPLE:
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "Authorization": `Bearer ${API_KEY}`,
+      Authorization: `Bearer ${API_KEY}`,
     },
     body: JSON.stringify(requestBody),
   });

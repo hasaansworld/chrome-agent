@@ -588,6 +588,57 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       const result = extractInteractiveElements();
       const elements = result.elements;
 
+      // Compare elements: what LLM expected vs what we're actually clicking
+      console.log("=== ELEMENT COMPARISON DEBUG ===");
+      if (request.originalElements && request.originalElements[request.elementIndex]) {
+        const llmExpectedElement = request.originalElements[request.elementIndex];
+        const actualElement = elements[request.elementIndex];
+        
+        console.log("🤖 LLM Expected Element:", {
+          index: request.elementIndex,
+          tagName: llmExpectedElement.tagName,
+          title: llmExpectedElement.title,
+          type: llmExpectedElement.type,
+          elementType: llmExpectedElement.elementType
+        });
+        
+        if (actualElement) {
+          console.log("🎯 Actual Element Found:", {
+            index: request.elementIndex,
+            tagName: actualElement.tagName,
+            title: actualElement.title,
+            type: actualElement.type,
+            elementType: actualElement.elementType
+          });
+          
+          // Check if they match
+          const elementsMatch = 
+            llmExpectedElement.tagName === actualElement.tagName &&
+            llmExpectedElement.title === actualElement.title &&
+            llmExpectedElement.type === actualElement.type;
+            
+          console.log(elementsMatch ? "✅ Elements MATCH" : "❌ Elements DIFFER");
+          
+          if (!elementsMatch) {
+            console.log("⚠️ MISMATCH DETAILS:");
+            if (llmExpectedElement.tagName !== actualElement.tagName) {
+              console.log(`  TagName: ${llmExpectedElement.tagName} → ${actualElement.tagName}`);
+            }
+            if (llmExpectedElement.title !== actualElement.title) {
+              console.log(`  Title: "${llmExpectedElement.title}" → "${actualElement.title}"`);
+            }
+            if (llmExpectedElement.type !== actualElement.type) {
+              console.log(`  Type: ${llmExpectedElement.type} → ${actualElement.type}`);
+            }
+          }
+        } else {
+          console.log("❌ No element found at index", request.elementIndex, "- only", elements.length, "elements available");
+        }
+      } else {
+        console.log("⚠️ No original elements provided for comparison");
+      }
+      console.log("================================");
+
       executeClickOnElement(request.elementIndex, elements)
         .then((result) => {
           console.log("Click result:", result);

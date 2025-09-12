@@ -250,6 +250,58 @@
             transform: translateX(20px);
         }
         
+        .screenshot-section {
+            background: white;
+            border-bottom: 1px solid #e2e8f0;
+            max-height: 200px;
+            overflow: hidden;
+        }
+        
+        .screenshot-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 12px;
+            background: #f7fafc;
+            border-bottom: 1px solid #e2e8f0;
+            font-size: 12px;
+            font-weight: 500;
+        }
+        
+        .screenshot-toggle {
+            background: #e2e8f0;
+            border: none;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-size: 10px;
+            cursor: pointer;
+            color: #4a5568;
+        }
+        
+        .screenshot-toggle:hover {
+            background: #cbd5e0;
+        }
+        
+        .screenshot-container {
+            padding: 8px;
+            text-align: center;
+            max-height: 160px;
+            overflow: auto;
+        }
+        
+        .screenshot-image {
+            max-width: 100%;
+            max-height: 150px;
+            border-radius: 4px;
+            border: 1px solid #e2e8f0;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+        
+        .screenshot-image:hover {
+            transform: scale(1.02);
+        }
+        
     </style>
 </head>
 <body>
@@ -283,6 +335,15 @@
         </label>
     </div>
     
+    <div class="screenshot-section" id="screenshot-section" style="display: none;">
+        <div class="screenshot-header">
+            <span>📸 Latest Screenshot</span>
+            <button class="screenshot-toggle" id="screenshot-toggle">Hide</button>
+        </div>
+        <div class="screenshot-container">
+            <img id="screenshot-image" class="screenshot-image" alt="Page screenshot"/>
+        </div>
+    </div>
 
     <div class="chat-messages" id="chat-messages">
         <div class="message system">

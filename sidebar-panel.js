@@ -15,6 +15,9 @@
   const boundingBoxToggle = document.getElementById("bounding-box-toggle");
   const status = document.getElementById("status");
   const currentUrl = document.getElementById("current-url");
+  const screenshotSection = document.getElementById("screenshot-section");
+  const screenshotImage = document.getElementById("screenshot-image");
+  const screenshotToggle = document.getElementById("screenshot-toggle");
 
   // Initialize
   document.addEventListener("DOMContentLoaded", init);
@@ -29,6 +32,7 @@
     sendBtn.addEventListener("click", handleSendMessage);
     clearBtn.addEventListener("click", clearChat);
     boundingBoxToggle.addEventListener("change", handleBoundingBoxToggle);
+    screenshotToggle.addEventListener("click", handleScreenshotToggle);
 
     chatInput.addEventListener("keydown", (e) => {
       if (e.key === "Enter" && !e.shiftKey) {
@@ -41,6 +45,13 @@
     chatInput.addEventListener("input", () => {
       chatInput.style.height = "auto";
       chatInput.style.height = Math.min(chatInput.scrollHeight, 120) + "px";
+    });
+
+    // Click on screenshot to open in new tab
+    screenshotImage.addEventListener("click", () => {
+      if (screenshotImage.src && screenshotImage.src !== '') {
+        window.open(screenshotImage.src, '_blank');
+      }
     });
   }
 
@@ -73,6 +84,98 @@
       chrome.tabs.sendMessage(currentTabId, { action: "showBoundingBoxes" });
     } else {
       chrome.tabs.sendMessage(currentTabId, { action: "clearBoundingBoxes" });
+    }
+  }
+
+  function handleScreenshotToggle() {
+    const isVisible = screenshotSection.style.display !== "none";
+    
+    if (isVisible) {
+      screenshotSection.style.display = "none";
+      screenshotToggle.textContent = "Show";
+    } else {
+      screenshotSection.style.display = "block";
+      screenshotToggle.textContent = "Hide";
+    }
+  }
+
+  function displayScreenshot(screenshotData) {
+    if (screenshotData) {
+      screenshotImage.src = screenshotData;
+      screenshotSection.style.display = "block";
+      screenshotToggle.textContent = "Hide";
+    }
+  }
+
+
+  async function validateElementText(currentTabId, actionData, originalElements) {
+    // If no elementText provided by LLM, skip validation
+    if (!actionData.elementText) {
+      return { isValid: true };
+    }
+
+    try {
+      // Get fresh elements from the page
+      const elementsData = await getElementsFromTab(currentTabId);
+      if (!elementsData || !elementsData.data || !elementsData.data.elements) {
+        return { 
+          isValid: false, 
+          errorMessage: "❌ Could not extract elements for validation" 
+        };
+      }
+
+      const currentElements = elementsData.data.elements;
+      const targetIndex = actionData.elementIndex;
+      const expectedText = actionData.elementText.toLowerCase().trim();
+
+      // Check if target index exists
+      if (targetIndex < 0 || targetIndex >= currentElements.length) {
+        return {
+          isValid: false,
+          errorMessage: `❌ Element index ${targetIndex} out of range (0-${currentElements.length - 1})`
+        };
+      }
+
+      const targetElement = currentElements[targetIndex];
+      const actualText = (targetElement.title || "").toLowerCase().trim();
+
+      // Check if text matches (starts with expected text)
+      if (actualText.startsWith(expectedText) || expectedText.startsWith(actualText)) {
+        return { isValid: true };
+      }
+
+      // Text doesn't match - find alternative elements with matching text
+      const matchingElements = [];
+      currentElements.forEach((element, index) => {
+        const elementText = (element.title || "").toLowerCase().trim();
+        if (elementText.startsWith(expectedText) || expectedText.startsWith(elementText)) {
+          matchingElements.push({ index, text: element.title, tagName: element.tagName });
+        }
+      });
+
+      let errorMessage = `❌ Element text mismatch at index ${targetIndex}:\n`;
+      errorMessage += `   Expected: "${actionData.elementText}"\n`;
+      errorMessage += `   Found: "${targetElement.title}"\n`;
+      
+      if (matchingElements.length > 0) {
+        errorMessage += `   Did you mean to click one of these instead?\n`;
+        matchingElements.forEach(match => {
+          errorMessage += `   • Index ${match.index}: ${match.tagName} - "${match.text}"\n`;
+        });
+      } else {
+        errorMessage += `   No elements found with similar text.`;
+      }
+
+      return {
+        isValid: false,
+        errorMessage: errorMessage
+      };
+
+    } catch (error) {
+      return {
+        isValid: false,
+        errorMessage: `❌ Validation error: ${error.message}`
+      };
     }
   }
 
@@ -121,15 +224,30 @@
     return 0; // No delays between actions
   }
 
-  async function executeAction(actionData, currentTabId) {
+  async function executeAction(actionData, currentTabId, originalElements) {
     try {
       if (
         actionData.action === "click" &&
         actionData.elementIndex !== undefined
       ) {
+        // Validate element text before clicking
+        const validationResult = await validateElementText(currentTabId, actionData, originalElements);
+        if (!validationResult.isValid) {
+          addMessage("system", validationResult.errorMessage);
+          
+          // Add validation failure to conversation history for LLM feedback
+          conversationHistory.push({
+            role: "system",
+            content: `VALIDATION FAILED: ${validationResult.errorMessage}`
+          });
+          
+          return false;
+        }
+
         const result = await executeClickInTab(
           currentTabId,
-          actionData.elementIndex
+          actionData.elementIndex,
+          originalElements
         );
         if (result.success) {
           addMessage("system", `✓ Clicked element: ${result.message}`);
@@ -648,7 +766,7 @@ Output: {"tasks": ["open new tab with URL https://gmail.com", "click compose new
       }
 
       // Execute the action
-      const actionSuccess = await executeAction(actionData, currentTabId);
+      const actionSuccess = await executeAction(actionData, currentTabId, elementsData.data.elements);
 
       if (actionSuccess) {
         addMessage("system", "✅ Action completed successfully");
@@ -1197,13 +1315,14 @@ If failed: {"action":"retry","result":"the [action] did not occur, retry"}`;
     });
   }
 
-  async function executeClickInTab(tabId, elementIndex) {
+  async function executeClickInTab(tabId, elementIndex, originalElements) {
     return new Promise((resolve) => {
       chrome.tabs.sendMessage(
         tabId,
         {
           action: "executeClickByIndex",
           elementIndex: elementIndex,
+          originalElements: originalElements,
         },
         (response) => {
           if (chrome.runtime.lastError) {
@@ -1409,13 +1528,12 @@ If failed: {"action":"retry","result":"the [action] did not occur, retry"}`;
     model
   ) {
     try {
-      // First attempt (no screenshot)
+      // Background script handles screenshot capture automatically
       return await callOpenAIAPISingle(
         message,
         elements,
         conversationHistory,
-        model,
-        null // No screenshot
+        model
       );
     } catch (error) {
       // Check if it's a 500 error that should be retried
@@ -1429,13 +1547,12 @@ If failed: {"action":"retry","result":"the [action] did not occur, retry"}`;
         await new Promise((resolve) => setTimeout(resolve, 1000)); // Wait 1 second
 
         try {
-          // Second attempt (no screenshot)
+          // Background script handles screenshot capture automatically
           return await callOpenAIAPISingle(
             message,
             elements,
             conversationHistory,
-            model,
-            null // No screenshot
+            model
           );
         } catch (retryError) {
           // If second attempt also fails, give up
@@ -1452,8 +1569,7 @@ If failed: {"action":"retry","result":"the [action] did not occur, retry"}`;
     message,
     elements,
     conversationHistory,
-    model,
-    screenshot
+    model
   ) {
     return new Promise((resolve, reject) => {
       // Add timeout to prevent hanging connections
@@ -1468,7 +1584,6 @@ If failed: {"action":"retry","result":"the [action] did not occur, retry"}`;
           elements: elements,
           conversationHistory: conversationHistory,
           model: model,
-          screenshot: screenshot,
           tabId: currentTabId, // Add the current tab ID explicitly
         },
         (response) => {
@@ -1524,6 +1639,12 @@ If failed: {"action":"retry","result":"the [action] did not occur, retry"}`;
               
               addMessage("system", statusMessage);
             }
+
+            // Display screenshot if available
+            if (response.screenshotData) {
+              displayScreenshot(response.screenshotData);
+            }
+
             resolve(response.response);
           } else {
             console.error("API call failed:", response.error);
