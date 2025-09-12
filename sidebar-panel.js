@@ -207,9 +207,6 @@
         if (tabResult.success) {
           addMessage("system", `✓ Opened new tab: ${tabResult.message}`);
           currentTabId = tabResult.tabId;
-          // Wait for tab to load before continuing
-          addMessage("system", "⏳ Waiting for new tab to load...");
-          await new Promise(resolve => setTimeout(resolve, 2000));
           return true;
         } else {
           addMessage("system", `❌ Failed to open tab: ${tabResult.error}`);
@@ -221,9 +218,6 @@
           addMessage("system", `✓ Switched to tab: ${switchResult.message}`);
           currentTabId = actionData.tabId;
           await getCurrentTabInfo();
-          // Wait for tab to be fully ready
-          addMessage("system", "⏳ Waiting for tab to be ready...");
-          await new Promise(resolve => setTimeout(resolve, 1000));
           return true;
         } else {
           addMessage(
@@ -631,13 +625,9 @@ Output: {"tasks": ["open new tab with URL https://gmail.com", "click compose new
       if (actionSuccess) {
         addMessage("system", "✅ Action completed successfully");
         
-        // Special handling for tab operations - longer wait
-        if (actionData.action === "switchTab" || actionData.action === "openTab") {
-          addMessage("system", "⏳ Extra wait for tab operation to settle...");
-          await new Promise(resolve => setTimeout(resolve, 3000)); // 3 second wait for tab operations
-        } else {
-          // Wait a moment for page updates
-          await new Promise(resolve => setTimeout(resolve, 1000));
+        // Minimal wait for DOM updates (only for click/input actions that change the page)
+        if (actionData.action === "click" || actionData.action === "enterText" || actionData.action === "pressEnter") {
+          await new Promise(resolve => setTimeout(resolve, 100));
         }
       } else {
         addMessage("system", "❌ Action failed, but continuing...");

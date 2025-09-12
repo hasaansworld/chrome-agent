@@ -79,9 +79,6 @@ async function captureTabScreenshot(tabId) {
       // Then activate the tab
       await chrome.tabs.update(tabId, { active: true });
       
-      // Wait longer for everything to settle
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      
       // Get updated tab info
       const updatedTab = await chrome.tabs.get(tabId);
       console.log("Updated tab active status:", updatedTab.active);
@@ -95,7 +92,6 @@ async function captureTabScreenshot(tabId) {
       if (!window.focused) {
         console.log("Window not focused, focusing it");
         await chrome.windows.update(tab.windowId, { focused: true });
-        await new Promise(resolve => setTimeout(resolve, 1000));
       }
     }
     
