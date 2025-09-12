@@ -488,16 +488,22 @@ Output: {"tasks": ["open new tab with URL https://gmail.com", "click compose new
   // SIMPLIFIED EXECUTION SYSTEM - ONLY THIS FUNCTION IS USED NOW
   async function executeNextAction(originalTask, stepCount) {
     const maxSteps = 20;
-    
+
     if (stepCount > maxSteps) {
-      addMessage("system", `⚠️ Reached maximum steps (${maxSteps}), stopping execution`);
+      addMessage(
+        "system",
+        `⚠️ Reached maximum steps (${maxSteps}), stopping execution`
+      );
       return;
     }
 
     try {
-      addMessage("system", `🔍 Step ${stepCount}: Analyzing current page state...`);
+      addMessage(
+        "system",
+        `🔍 Step ${stepCount}: Analyzing current page state...`
+      );
       addMessage("system", `📋 Using tab ID: ${currentTabId}`);
-      
+
       // Get fresh DOM elements and screenshot
       const elementsData = await getElementsFromTab(currentTabId);
       if (!elementsData || !elementsData.data || !elementsData.data.elements) {
@@ -506,23 +512,27 @@ Output: {"tasks": ["open new tab with URL https://gmail.com", "click compose new
       }
 
       // Simple context message
-      const contextMessage = stepCount === 1 
-        ? `Task: "${originalTask}". Look at the current page and determine what action to take first to accomplish this task.`
-        : `Continue with task: "${originalTask}". Step ${stepCount}. Look at the current page state and determine what action to take next.`;
+      const contextMessage =
+        stepCount === 1
+          ? `Task: "${originalTask}". Look at the current page and determine what action to take first to accomplish this task.`
+          : `Continue with task: "${originalTask}". Step ${stepCount}. Look at the current page state and determine what action to take next.`;
 
       // Call LLM with current state
       const selectedModel = modelSelector.value;
-      
+
       // Add current message to conversation history BEFORE API call
       conversationHistory.push({
         role: "user",
-        content: contextMessage
+        content: contextMessage,
       });
-      
+
       // Debug: Log conversation history
       console.log("Conversation history before API call:", conversationHistory);
-      addMessage("system", `📝 Conversation history has ${conversationHistory.length} messages`);
-      
+      addMessage(
+        "system",
+        `📝 Conversation history has ${conversationHistory.length} messages`
+      );
+
       const response = await callGroqAPI(
         contextMessage,
         elementsData.data.elements,
@@ -534,28 +544,30 @@ Output: {"tasks": ["open new tab with URL https://gmail.com", "click compose new
       try {
         actionData = JSON.parse(response);
       } catch (parseError) {
-        console.error("JSON Parse Error:", parseError);
-        console.error("Raw response:", response);
-        
+        console.log("JSON Parse Error:", parseError);
+        console.log("Raw response:", response);
+
         // Try to extract JSON from response if it's wrapped in text
         let cleanedResponse = response.trim();
-        
+
         // Remove markdown code blocks if present
-        const backtick = '`';
+        const backtick = "`";
         const codeBlockStart = backtick + backtick + backtick;
-        
-        if (cleanedResponse.includes(codeBlockStart + 'json')) {
+
+        if (cleanedResponse.includes(codeBlockStart + "json")) {
           // Extract content between ```json and ```
-          const startPattern = codeBlockStart + 'json';
+          const startPattern = codeBlockStart + "json";
           const endPattern = codeBlockStart;
-          
+
           const startIndex = cleanedResponse.indexOf(startPattern);
           if (startIndex !== -1) {
             const contentStart = startIndex + startPattern.length;
             const endIndex = cleanedResponse.indexOf(endPattern, contentStart);
-            
+
             if (endIndex !== -1) {
-              cleanedResponse = cleanedResponse.substring(contentStart, endIndex).trim();
+              cleanedResponse = cleanedResponse
+                .substring(contentStart, endIndex)
+                .trim();
             } else {
               // Fallback: just remove the starting marker
               cleanedResponse = cleanedResponse.substring(contentStart).trim();
@@ -565,21 +577,28 @@ Output: {"tasks": ["open new tab with URL https://gmail.com", "click compose new
           // Extract content between ``` blocks
           const firstStart = cleanedResponse.indexOf(codeBlockStart);
           if (firstStart !== -1) {
-            const contentStart = cleanedResponse.indexOf('\n', firstStart) + 1;
-            const endIndex = cleanedResponse.indexOf(codeBlockStart, contentStart);
-            
+            const contentStart = cleanedResponse.indexOf("\n", firstStart) + 1;
+            const endIndex = cleanedResponse.indexOf(
+              codeBlockStart,
+              contentStart
+            );
+
             if (endIndex !== -1 && contentStart > 0) {
-              cleanedResponse = cleanedResponse.substring(contentStart, endIndex).trim();
+              cleanedResponse = cleanedResponse
+                .substring(contentStart, endIndex)
+                .trim();
             } else {
               // Fallback: remove first code block marker and everything after last one
-              cleanedResponse = cleanedResponse.substring(contentStart || firstStart + 3).trim();
+              cleanedResponse = cleanedResponse
+                .substring(contentStart || firstStart + 3)
+                .trim();
             }
           }
         }
-        
+
         cleanedResponse = cleanedResponse.trim();
         console.log("Cleaned response:", cleanedResponse);
-        
+
         // Try to parse the cleaned response
         try {
           actionData = JSON.parse(cleanedResponse);
@@ -592,12 +611,21 @@ Output: {"tasks": ["open new tab with URL https://gmail.com", "click compose new
               actionData = JSON.parse(jsonMatch[0]);
               addMessage("system", "✅ Extracted JSON object from text");
             } catch (thirdError) {
-              addMessage("system", `❌ Invalid JSON even after cleanup: ${cleanedResponse.substring(0, 200)}...`);
+              addMessage(
+                "system",
+                `❌ Invalid JSON even after cleanup: ${cleanedResponse.substring(
+                  0,
+                  200
+                )}...`
+              );
               addMessage("system", `Parse error: ${secondError.message}`);
               return;
             }
           } else {
-            addMessage("system", `❌ No JSON found in response: ${response.substring(0, 200)}...`);
+            addMessage(
+              "system",
+              `❌ No JSON found in response: ${response.substring(0, 200)}...`
+            );
             addMessage("system", `Parse error: ${parseError.message}`);
             return;
           }
@@ -606,8 +634,8 @@ Output: {"tasks": ["open new tab with URL https://gmail.com", "click compose new
 
       // Add assistant response to conversation history AFTER getting response
       conversationHistory.push({
-        role: "assistant", 
-        content: response
+        role: "assistant",
+        content: response,
       });
 
       // Display what the agent decided to do
@@ -621,13 +649,17 @@ Output: {"tasks": ["open new tab with URL https://gmail.com", "click compose new
 
       // Execute the action
       const actionSuccess = await executeAction(actionData, currentTabId);
-      
+
       if (actionSuccess) {
         addMessage("system", "✅ Action completed successfully");
-        
+
         // Minimal wait for DOM updates (only for click/input actions that change the page)
-        if (actionData.action === "click" || actionData.action === "enterText" || actionData.action === "pressEnter") {
-          await new Promise(resolve => setTimeout(resolve, 100));
+        if (
+          actionData.action === "click" ||
+          actionData.action === "enterText" ||
+          actionData.action === "pressEnter"
+        ) {
+          await new Promise((resolve) => setTimeout(resolve, 100));
         }
       } else {
         addMessage("system", "❌ Action failed, but continuing...");
@@ -635,7 +667,6 @@ Output: {"tasks": ["open new tab with URL https://gmail.com", "click compose new
 
       // Recursively call for next action - this is key!
       await executeNextAction(originalTask, stepCount + 1);
-
     } catch (error) {
       console.error("Step execution failed:", error);
       addMessage("system", `❌ Step ${stepCount} error: ${error.message}`);
@@ -1329,21 +1360,31 @@ If failed: {"action":"retry","result":"the [action] did not occur, retry"}`;
   async function captureScreenshot() {
     return new Promise((resolve) => {
       addMessage("system", "📸 Capturing screenshot...");
-      
+
       // Add timeout to prevent hanging
       const timeout = setTimeout(() => {
-        addMessage("system", "⏱️ Screenshot capture timed out, continuing without screenshot");
+        addMessage(
+          "system",
+          "⏱️ Screenshot capture timed out, continuing without screenshot"
+        );
         resolve(null);
       }, 5000); // 5 second timeout
-      
+
       chrome.runtime.sendMessage(
         { action: "captureScreenshot" },
         (response) => {
           clearTimeout(timeout);
-          
+
           if (chrome.runtime.lastError) {
-            console.error("Error capturing screenshot:", chrome.runtime.lastError);
-            addMessage("system", "❌ Screenshot capture failed: " + chrome.runtime.lastError.message);
+            console.error(
+              "Error capturing screenshot:",
+              chrome.runtime.lastError
+            );
+            addMessage(
+              "system",
+              "❌ Screenshot capture failed: " +
+                chrome.runtime.lastError.message
+            );
             addMessage("system", "🔄 Continuing without screenshot...");
             resolve(null);
           } else if (response && response.success) {
@@ -1432,7 +1473,7 @@ If failed: {"action":"retry","result":"the [action] did not occur, retry"}`;
         },
         (response) => {
           clearTimeout(timeout);
-          
+
           if (chrome.runtime.lastError) {
             console.error("Chrome runtime error:", chrome.runtime.lastError);
             reject(new Error(chrome.runtime.lastError.message));
@@ -1442,24 +1483,46 @@ If failed: {"action":"retry","result":"the [action] did not occur, retry"}`;
           } else if (response.success) {
             // Debug: Log response
             console.log("API Response received:", response);
-            
-            // Display screenshot status
+
+            // Display screenshot status and timings
             if (response.screenshotStatus) {
               console.log("Screenshot status:", response.screenshotStatus);
+              let statusMessage = "";
+              
               if (response.screenshotStatus === "success") {
-                addMessage("system", "📸 Screenshot captured successfully");
+                statusMessage = "📸 Screenshot captured successfully";
               } else if (response.screenshotStatus === "failed") {
-                addMessage("system", "❌ Screenshot capture failed");
+                statusMessage = "❌ Screenshot capture failed";
               } else if (response.screenshotStatus === "no_tab") {
-                addMessage("system", "⚠️ No tab available for screenshot");
+                statusMessage = "⚠️ No tab available for screenshot";
               } else if (response.screenshotStatus === "tab_not_found") {
-                addMessage("system", "❌ Tab not found or inaccessible for screenshot");
+                statusMessage = "❌ Tab not found or inaccessible for screenshot";
+              } else if (response.screenshotStatus === "restricted_url") {
+                statusMessage = "🔒 Screenshot not available (restricted URL)";
               } else {
-                addMessage("system", `🔧 Screenshot status: ${response.screenshotStatus}`);
+                statusMessage = `🔧 Screenshot status: ${response.screenshotStatus}`;
               }
+
+              // Add timing information if available
+              if (response.timings) {
+                const screenshotTime = response.timings.screenshot || 0;
+                const apiTime = response.timings.api || 0;
+                statusMessage += ` | ⏱️ Screenshot: ${screenshotTime}ms, API: ${apiTime}ms`;
+              }
+              
+              addMessage("system", statusMessage);
             } else {
               console.log("No screenshot status in response");
-              addMessage("system", "⚠️ No screenshot status received");
+              let statusMessage = "⚠️ No screenshot status received";
+              
+              // Add timing information if available without screenshot status
+              if (response.timings) {
+                const screenshotTime = response.timings.screenshot || 0;
+                const apiTime = response.timings.api || 0;
+                statusMessage += ` | ⏱️ Screenshot: ${screenshotTime}ms, API: ${apiTime}ms`;
+              }
+              
+              addMessage("system", statusMessage);
             }
             resolve(response.response);
           } else {
@@ -1473,7 +1536,12 @@ If failed: {"action":"retry","result":"the [action] did not occur, retry"}`;
 
   // Backward compatibility alias
   async function callGroqAPI(message, elements, conversationHistory, model) {
-    return callOpenAIAPIWithRetry(message, elements, conversationHistory, model);
+    return callOpenAIAPIWithRetry(
+      message,
+      elements,
+      conversationHistory,
+      model
+    );
   }
 
   function addMessage(sender, content) {
@@ -1494,25 +1562,27 @@ If failed: {"action":"retry","result":"the [action] did not occur, retry"}`;
 
     // Scroll to bottom
     chatMessages.scrollTop = chatMessages.scrollHeight;
-    
+
     // Add important system messages to conversation history for LLM feedback
     if (sender === "system" && shouldAddToConversationHistory(content)) {
       conversationHistory.push({
         role: "system",
-        content: `FEEDBACK: ${content}`
+        content: `FEEDBACK: ${content}`,
       });
     }
   }
-  
+
   function shouldAddToConversationHistory(systemMessage) {
     // Only add meaningful feedback messages, not debug or status messages
-    return systemMessage.includes("✅ Action completed") ||
-           systemMessage.includes("❌ Action failed") ||
-           systemMessage.includes("✅ Task completed") ||
-           systemMessage.includes("Screenshot captured") ||
-           systemMessage.includes("Screenshot failed") ||
-           systemMessage.includes("Could not extract elements") ||
-           systemMessage.includes("Invalid response format");
+    return (
+      systemMessage.includes("✅ Action completed") ||
+      systemMessage.includes("❌ Action failed") ||
+      systemMessage.includes("✅ Task completed") ||
+      systemMessage.includes("Screenshot captured") ||
+      systemMessage.includes("Screenshot failed") ||
+      systemMessage.includes("Could not extract elements") ||
+      systemMessage.includes("Invalid response format")
+    );
   }
 
   function clearChat() {

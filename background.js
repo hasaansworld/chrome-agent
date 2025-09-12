@@ -18,15 +18,27 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         
         // Try to capture screenshot, but don't fail if it doesn't work
         let screenshotStatus = "not_attempted";
+        let screenshotTime = 0;
         try {
           const tabId = request.tabId || (sender.tab && sender.tab.id);
           if (tabId) {
             console.log("Attempting to capture screenshot for tab:", tabId, "from request.tabId:", request.tabId);
             
-            // Capture screenshot (this function handles tab activation internally)
-            screenshot = await captureTabScreenshot(tabId);
-            console.log("Screenshot captured successfully, length:", screenshot ? screenshot.length : 'null');
-            screenshotStatus = "success";
+            // Check if tab URL is accessible for screenshots
+            const tab = await chrome.tabs.get(tabId);
+            if (!tab.url || tab.url.startsWith('chrome://') || tab.url.startsWith('chrome-extension://') || tab.url.startsWith('moz-extension://') || tab.url === '') {
+              console.log("Tab URL not accessible for screenshots:", tab.url);
+              screenshotStatus = "restricted_url";
+              screenshotTime = 0;
+            } else {
+              // Time the screenshot capture
+              const screenshotStart = performance.now();
+              screenshot = await captureTabScreenshot(tabId);
+              screenshotTime = Math.round(performance.now() - screenshotStart);
+              
+              console.log("Screenshot captured successfully, length:", screenshot ? screenshot.length : 'null', "Time:", screenshotTime + "ms");
+              screenshotStatus = "success";
+            }
           } else {
             console.log("No tab ID available for screenshot (sender.tab:", sender.tab, "request.tabId:", request.tabId, ")");
             screenshotStatus = "no_tab";
@@ -34,9 +46,11 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         } catch (screenshotError) {
           console.error("Screenshot capture failed:", screenshotError);
           screenshotStatus = "failed";
+          screenshotTime = 0;
         }
         
         // Call OpenAI API with or without screenshot
+        const apiStart = performance.now();
         const response = await callOpenAIAPI(
           request.message, 
           request.elements || [], 
@@ -44,9 +58,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           request.model || 'gpt-4o-2024-11-20',
           screenshot
         );
+        const apiTime = Math.round(performance.now() - apiStart);
         
-        console.log("Sending response with screenshotStatus:", screenshotStatus);
-        sendResponse({ success: true, response, screenshotStatus });
+        console.log("Sending response with screenshotStatus:", screenshotStatus, "Timings - Screenshot:", screenshotTime + "ms", "API:", apiTime + "ms");
+        sendResponse({ success: true, response, screenshotStatus, timings: { screenshot: screenshotTime, api: apiTime } });
       } catch (error) {
         console.error("Error in API call:", error);
         sendResponse({ success: false, error: error.message || "Unknown error occurred" });
