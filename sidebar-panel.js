@@ -106,7 +106,7 @@
     updateStatus("Running automation...");
 
     try {
-      await runAutonomousAgent(message);
+      await executeNextAction(message, 1);
     } catch (error) {
       console.error("Agent error:", error);
       addMessage("system", `❌ Agent error: ${error.message}`);
@@ -207,7 +207,9 @@
         if (tabResult.success) {
           addMessage("system", `✓ Opened new tab: ${tabResult.message}`);
           currentTabId = tabResult.tabId;
-          // No delay for tab loading
+          // Wait for tab to load before continuing
+          addMessage("system", "⏳ Waiting for new tab to load...");
+          await new Promise(resolve => setTimeout(resolve, 2000));
           return true;
         } else {
           addMessage("system", `❌ Failed to open tab: ${tabResult.error}`);
@@ -219,6 +221,9 @@
           addMessage("system", `✓ Switched to tab: ${switchResult.message}`);
           currentTabId = actionData.tabId;
           await getCurrentTabInfo();
+          // Wait for tab to be fully ready
+          addMessage("system", "⏳ Waiting for tab to be ready...");
+          await new Promise(resolve => setTimeout(resolve, 1000));
           return true;
         } else {
           addMessage(
@@ -228,7 +233,7 @@
           return false;
         }
       } else if (actionData.action === "getTabList") {
-        const tabs = await getAllTabs();
+        const tabs = await getTabList();
         if (tabs.success) {
           addMessage(
             "system",
@@ -393,6 +398,8 @@
     }
   }
 
+  // OLD COMPLEX SYSTEM - COMMENTED OUT
+  /*
   async function runAutonomousAgent(initialMessage) {
     addMessage("system", `🤖 Starting autonomous agent for: "${initialMessage}"`);
 
@@ -482,7 +489,171 @@ Output: {"tasks": ["open new tab with URL https://gmail.com", "click compose new
       return null;
     }
   }
+  */
 
+  // SIMPLIFIED EXECUTION SYSTEM - ONLY THIS FUNCTION IS USED NOW
+  async function executeNextAction(originalTask, stepCount) {
+    const maxSteps = 20;
+    
+    if (stepCount > maxSteps) {
+      addMessage("system", `⚠️ Reached maximum steps (${maxSteps}), stopping execution`);
+      return;
+    }
+
+    try {
+      addMessage("system", `🔍 Step ${stepCount}: Analyzing current page state...`);
+      addMessage("system", `📋 Using tab ID: ${currentTabId}`);
+      
+      // Get fresh DOM elements and screenshot
+      const elementsData = await getElementsFromTab(currentTabId);
+      if (!elementsData || !elementsData.data || !elementsData.data.elements) {
+        addMessage("system", "❌ Could not extract elements from the page");
+        return;
+      }
+
+      // Simple context message
+      const contextMessage = stepCount === 1 
+        ? `Task: "${originalTask}". Look at the current page and determine what action to take first to accomplish this task.`
+        : `Continue with task: "${originalTask}". Step ${stepCount}. Look at the current page state and determine what action to take next.`;
+
+      // Call LLM with current state
+      const selectedModel = modelSelector.value;
+      
+      // Add current message to conversation history BEFORE API call
+      conversationHistory.push({
+        role: "user",
+        content: contextMessage
+      });
+      
+      // Debug: Log conversation history
+      console.log("Conversation history before API call:", conversationHistory);
+      addMessage("system", `📝 Conversation history has ${conversationHistory.length} messages`);
+      
+      const response = await callGroqAPI(
+        contextMessage,
+        elementsData.data.elements,
+        conversationHistory,
+        selectedModel
+      );
+
+      let actionData;
+      try {
+        actionData = JSON.parse(response);
+      } catch (parseError) {
+        console.error("JSON Parse Error:", parseError);
+        console.error("Raw response:", response);
+        
+        // Try to extract JSON from response if it's wrapped in text
+        let cleanedResponse = response.trim();
+        
+        // Remove markdown code blocks if present
+        const backtick = '`';
+        const codeBlockStart = backtick + backtick + backtick;
+        
+        if (cleanedResponse.includes(codeBlockStart + 'json')) {
+          // Extract content between ```json and ```
+          const startPattern = codeBlockStart + 'json';
+          const endPattern = codeBlockStart;
+          
+          const startIndex = cleanedResponse.indexOf(startPattern);
+          if (startIndex !== -1) {
+            const contentStart = startIndex + startPattern.length;
+            const endIndex = cleanedResponse.indexOf(endPattern, contentStart);
+            
+            if (endIndex !== -1) {
+              cleanedResponse = cleanedResponse.substring(contentStart, endIndex).trim();
+            } else {
+              // Fallback: just remove the starting marker
+              cleanedResponse = cleanedResponse.substring(contentStart).trim();
+            }
+          }
+        } else if (cleanedResponse.includes(codeBlockStart)) {
+          // Extract content between ``` blocks
+          const firstStart = cleanedResponse.indexOf(codeBlockStart);
+          if (firstStart !== -1) {
+            const contentStart = cleanedResponse.indexOf('\n', firstStart) + 1;
+            const endIndex = cleanedResponse.indexOf(codeBlockStart, contentStart);
+            
+            if (endIndex !== -1 && contentStart > 0) {
+              cleanedResponse = cleanedResponse.substring(contentStart, endIndex).trim();
+            } else {
+              // Fallback: remove first code block marker and everything after last one
+              cleanedResponse = cleanedResponse.substring(contentStart || firstStart + 3).trim();
+            }
+          }
+        }
+        
+        cleanedResponse = cleanedResponse.trim();
+        console.log("Cleaned response:", cleanedResponse);
+        
+        // Try to parse the cleaned response
+        try {
+          actionData = JSON.parse(cleanedResponse);
+          addMessage("system", "✅ Recovered JSON from wrapped response");
+        } catch (secondError) {
+          // Try to find JSON object in the text as last resort
+          const jsonMatch = cleanedResponse.match(/\{[\s\S]*\}/);
+          if (jsonMatch) {
+            try {
+              actionData = JSON.parse(jsonMatch[0]);
+              addMessage("system", "✅ Extracted JSON object from text");
+            } catch (thirdError) {
+              addMessage("system", `❌ Invalid JSON even after cleanup: ${cleanedResponse.substring(0, 200)}...`);
+              addMessage("system", `Parse error: ${secondError.message}`);
+              return;
+            }
+          } else {
+            addMessage("system", `❌ No JSON found in response: ${response.substring(0, 200)}...`);
+            addMessage("system", `Parse error: ${parseError.message}`);
+            return;
+          }
+        }
+      }
+
+      // Add assistant response to conversation history AFTER getting response
+      conversationHistory.push({
+        role: "assistant", 
+        content: response
+      });
+
+      // Display what the agent decided to do
+      addMessage("assistant", actionData.message || "Taking action...");
+
+      // Check if task is complete
+      if (actionData.action === "none") {
+        addMessage("system", `✅ Task completed: ${actionData.message}`);
+        return;
+      }
+
+      // Execute the action
+      const actionSuccess = await executeAction(actionData, currentTabId);
+      
+      if (actionSuccess) {
+        addMessage("system", "✅ Action completed successfully");
+        
+        // Special handling for tab operations - longer wait
+        if (actionData.action === "switchTab" || actionData.action === "openTab") {
+          addMessage("system", "⏳ Extra wait for tab operation to settle...");
+          await new Promise(resolve => setTimeout(resolve, 3000)); // 3 second wait for tab operations
+        } else {
+          // Wait a moment for page updates
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+      } else {
+        addMessage("system", "❌ Action failed, but continuing...");
+      }
+
+      // Recursively call for next action - this is key!
+      await executeNextAction(originalTask, stepCount + 1);
+
+    } catch (error) {
+      console.error("Step execution failed:", error);
+      addMessage("system", `❌ Step ${stepCount} error: ${error.message}`);
+    }
+  }
+
+  // OLD COMPLEX FUNCTIONS - COMMENTED OUT
+  /*
   async function executeIndividualTask(taskMessage, taskNumber) {
     let stepCount = 0;
     const maxSteps = 8; // Reduced steps per individual task to prevent loops
@@ -490,23 +661,24 @@ Output: {"tasks": ["open new tab with URL https://gmail.com", "click compose new
     // Track conversation for this individual task
     const taskConversationHistory = [];
 
-    while (stepCount < maxSteps) {
-      stepCount++;
-      
-      // Force completion if we're at the last step
-      if (stepCount >= maxSteps) {
-        addMessage("system", `   ⚠️ Reached maximum steps (${maxSteps}), forcing task completion`);
-        return false;
-      }
-      
-      try {
-        addMessage("system", `   Step ${stepCount}/${maxSteps}: Getting page state and determining next action...`);
+    // Replace while loop with single recursive call
+    return await executeTaskStepRecursively(taskMessage, taskNumber, 1, 15, []);
+  }
+
+  async function executeTaskStepRecursively(taskMessage, taskNumber, stepCount, maxSteps, taskConversationHistory) {
+    if (stepCount > maxSteps) {
+      addMessage("system", `   ⚠️ Task ${taskNumber} reached maximum steps (${maxSteps}), considering incomplete`);
+      return false;
+    }
+
+    try {
+      addMessage("system", `   Step ${stepCount}/${maxSteps}: Getting page state and determining next action...`);
         
         // Get fresh DOM elements
         const elementsData = await getElementsFromTab(currentTabId);
         if (!elementsData || !elementsData.data || !elementsData.data.elements) {
-          addMessage("system", "   ❌ Could not extract elements from the page");
-          return false;
+          addMessage("system", "   ❌ Could not extract elements from the page, trying again...");
+          return await executeTaskStepRecursively(taskMessage, taskNumber, stepCount + 1, maxSteps, taskConversationHistory);
         }
 
         // Clean user message for context
@@ -569,8 +741,8 @@ Task complete (ONLY if 100% certain): {"action": "none", "message": "task comple
         try {
           jsonResponse = JSON.parse(response);
         } catch (parseError) {
-          addMessage("system", `   ❌ Invalid JSON response: ${response.substring(0, 200)}...`);
-          continue;
+          addMessage("system", `   ❌ Invalid JSON response, retrying...`);
+          return await executeTaskStepRecursively(taskMessage, taskNumber, stepCount + 1, maxSteps, taskConversationHistory);
         }
 
         // Add assistant response to task conversation history
@@ -586,54 +758,35 @@ Task complete (ONLY if 100% certain): {"action": "none", "message": "task comple
         // Execute the action
         const actionSuccess = await executeAction(jsonResponse, currentTabId);
         
-        // Add detailed action result to task context
-        let actionResultMessage;
         if (actionSuccess) {
-          actionResultMessage = `✅ Successfully executed ${jsonResponse.action}`;
-          if (jsonResponse.action === "click") {
-            actionResultMessage += ` on element ${jsonResponse.elementIndex}`;
-          } else if (jsonResponse.action === "enterText") {
-            actionResultMessage += ` "${jsonResponse.text}" into element ${jsonResponse.elementIndex}`;
-          } else if (jsonResponse.action === "pressEnter") {
-            actionResultMessage += ` on element ${jsonResponse.elementIndex}`;
-          } else if (jsonResponse.action === "scrollY") {
-            actionResultMessage += ` by ${jsonResponse.amount}px vertically`;
-          } else if (jsonResponse.action === "openTab") {
-            actionResultMessage += ` to ${jsonResponse.url}`;
-          }
-          actionResultMessage += `. ${jsonResponse.message}`;
-          
           addMessage("system", "   ✅ Action completed successfully");
-          // No delay for page updates
-        } else {
-          actionResultMessage = `❌ Failed to execute ${jsonResponse.action}`;
-          if (jsonResponse.action === "click") {
-            actionResultMessage += ` on element ${jsonResponse.elementIndex}`;
-          } else if (jsonResponse.action === "enterText") {
-            actionResultMessage += ` "${jsonResponse.text}" into element ${jsonResponse.elementIndex}`;
+          // Wait for page updates
+          const delay = getActionDelay(jsonResponse.action);
+          if (delay > 0) {
+            await new Promise(resolve => setTimeout(resolve, delay));
           }
-          actionResultMessage += `. Action failed - will try different approach.`;
-          
-          addMessage("system", "   ❌ Action failed, will try different approach in next step");
+        } else {
+          addMessage("system", "   ❌ Action failed, trying alternative approach");
         }
         
-        // No conversation history tracking needed
+        // Recursively continue to next step regardless of action success/failure
+        return await executeTaskStepRecursively(taskMessage, taskNumber, stepCount + 1, maxSteps, taskConversationHistory);
 
       } catch (error) {
-        console.error("Task execution error:", error);
-        addMessage("system", `   ❌ Step error: ${error.message}`);
+        console.error("Recursive task step failed:", error);
+        addMessage("system", `   ❌ Step ${stepCount} error: ${error.message}`);
+        
+        // Try one more time with next step
+        if (stepCount < maxSteps) {
+          return await executeTaskStepRecursively(taskMessage, taskNumber, stepCount + 1, maxSteps, taskConversationHistory);
+        }
+        
         return false;
       }
-    }
-
-    if (stepCount >= maxSteps) {
-      addMessage("system", `   ⚠️ Task reached maximum steps (${maxSteps}), considering incomplete`);
-      return false;
-    }
-
-    return false;
   }
 
+  // OLD FUNCTION - REPLACED WITH RECURSIVE VERSION ABOVE
+  /*
   async function executeActionStep(
     taskMessage,
     stepCount,
@@ -737,7 +890,10 @@ Task complete (ONLY if 100% certain): {"action": "none", "message": "task comple
       return;
     }
   }
+  */
 
+  // OLD FUNCTION - ALSO COMMENTING OUT VERIFICATION STEP
+  /*
   async function executeVerificationStep(
     taskMessage,
     stepCount,
@@ -943,6 +1099,7 @@ If failed: {"action":"retry","result":"the [action] did not occur, retry"}`;
       addMessage("system", `❌ Verification error: ${error.message}`);
     }
   }
+  */
 
   async function getElementsFromTab(tabId, retryCount = 0) {
     return new Promise((resolve) => {
@@ -1268,6 +1425,11 @@ If failed: {"action":"retry","result":"the [action] did not occur, retry"}`;
     screenshot
   ) {
     return new Promise((resolve, reject) => {
+      // Add timeout to prevent hanging connections
+      const timeout = setTimeout(() => {
+        reject(new Error("API call timed out after 60 seconds"));
+      }, 60000);
+
       chrome.runtime.sendMessage(
         {
           action: "callClaudeAPI",
@@ -1276,14 +1438,43 @@ If failed: {"action":"retry","result":"the [action] did not occur, retry"}`;
           conversationHistory: conversationHistory,
           model: model,
           screenshot: screenshot,
+          tabId: currentTabId, // Add the current tab ID explicitly
         },
         (response) => {
+          clearTimeout(timeout);
+          
           if (chrome.runtime.lastError) {
+            console.error("Chrome runtime error:", chrome.runtime.lastError);
             reject(new Error(chrome.runtime.lastError.message));
+          } else if (!response) {
+            console.error("No response received from background script");
+            reject(new Error("No response received from background script"));
           } else if (response.success) {
+            // Debug: Log response
+            console.log("API Response received:", response);
+            
+            // Display screenshot status
+            if (response.screenshotStatus) {
+              console.log("Screenshot status:", response.screenshotStatus);
+              if (response.screenshotStatus === "success") {
+                addMessage("system", "📸 Screenshot captured successfully");
+              } else if (response.screenshotStatus === "failed") {
+                addMessage("system", "❌ Screenshot capture failed");
+              } else if (response.screenshotStatus === "no_tab") {
+                addMessage("system", "⚠️ No tab available for screenshot");
+              } else if (response.screenshotStatus === "tab_not_found") {
+                addMessage("system", "❌ Tab not found or inaccessible for screenshot");
+              } else {
+                addMessage("system", `🔧 Screenshot status: ${response.screenshotStatus}`);
+              }
+            } else {
+              console.log("No screenshot status in response");
+              addMessage("system", "⚠️ No screenshot status received");
+            }
             resolve(response.response);
           } else {
-            reject(new Error(response.error));
+            console.error("API call failed:", response.error);
+            reject(new Error(response.error || "Unknown API error"));
           }
         }
       );
@@ -1313,6 +1504,25 @@ If failed: {"action":"retry","result":"the [action] did not occur, retry"}`;
 
     // Scroll to bottom
     chatMessages.scrollTop = chatMessages.scrollHeight;
+    
+    // Add important system messages to conversation history for LLM feedback
+    if (sender === "system" && shouldAddToConversationHistory(content)) {
+      conversationHistory.push({
+        role: "system",
+        content: `FEEDBACK: ${content}`
+      });
+    }
+  }
+  
+  function shouldAddToConversationHistory(systemMessage) {
+    // Only add meaningful feedback messages, not debug or status messages
+    return systemMessage.includes("✅ Action completed") ||
+           systemMessage.includes("❌ Action failed") ||
+           systemMessage.includes("✅ Task completed") ||
+           systemMessage.includes("Screenshot captured") ||
+           systemMessage.includes("Screenshot failed") ||
+           systemMessage.includes("Could not extract elements") ||
+           systemMessage.includes("Invalid response format");
   }
 
   function clearChat() {
