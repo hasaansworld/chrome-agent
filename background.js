@@ -14,6 +14,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     // Use async/await pattern for better error handling
     (async () => {
       try {
+        // SCREENSHOT CODE COMMENTED OUT
+        /*
         let screenshot = null;
 
         // Try to capture screenshot, but don't fail if it doesn't work
@@ -70,32 +72,23 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           screenshotStatus = "failed";
           screenshotTime = 0;
         }
+        */
 
-        // Call OpenAI API with or without screenshot
+        // Call Groq API without screenshot
         const apiStart = performance.now();
-        const response = await callOpenAIAPI(
+        const response = await callGroqAPI(
           request.message,
           request.elements || [],
           request.conversationHistory || [],
-          request.model || "gpt-4o-2024-11-20",
-          screenshot
+          request.model || "llama3-groq-70b-8192-tool-use-preview"
         );
         const apiTime = Math.round(performance.now() - apiStart);
 
-        console.log(
-          "Sending response with screenshotStatus:",
-          screenshotStatus,
-          "Timings - Screenshot:",
-          screenshotTime + "ms",
-          "API:",
-          apiTime + "ms"
-        );
+        console.log("Sending response with API timing:", apiTime + "ms");
         sendResponse({
           success: true,
           response,
-          screenshotStatus,
-          screenshotData: screenshot, // Include the actual screenshot data
-          timings: { screenshot: screenshotTime, api: apiTime },
+          timings: { api: apiTime },
         });
       } catch (error) {
         console.error("Error in API call:", error);
@@ -192,24 +185,22 @@ async function captureTabScreenshot(tabId) {
   }
 }
 
-async function callOpenAIAPI(
+async function callGroqAPI(
   message,
   elements = [],
   conversationHistory = [],
-  model = "gpt-4o-2024-11-20",
-  screenshot = null
+  model = "llama3-groq-70b-8192-tool-use-preview"
 ) {
-  // Read API key from environment - Note: In Chrome extension, you would need to read from storage or inject it
-  const API_KEY =
-    "REMOVED_OPENAI_KEY";
+  // Groq API key
+  const API_KEY = "REMOVED_GROQ_KEY";
 
-  if (!API_KEY || API_KEY === "your-openai-api-key-here") {
+  if (!API_KEY || API_KEY === "your-groq-api-key-here") {
     throw new Error(
-      "Please configure your OpenAI API key in the extension code."
+      "Please configure your Groq API key in the extension code."
     );
   }
 
-  console.log("=== OPENAI API CALL DEBUG ===");
+  console.log("=== GROQ API CALL DEBUG ===");
   console.log("Elements count:", elements.length);
   console.log("Conversation history length:", conversationHistory.length);
   console.log("Model:", model);
@@ -224,17 +215,17 @@ async function callOpenAIAPI(
     elementType: el.elementType,
   }));
 
-  const systemPrompt = `You are an autonomous web automation agent. You will be provided with task instructions, a screenshot of the current page, and HTML DOM content. Your job is to analyze the current page state and determine the next action needed to complete the task.
+  const systemPrompt = `You are an autonomous web automation agent. You will be provided with task instructions and HTML DOM content. Your job is to analyze the current page state and determine the next action needed to complete the task.
 
 TASK INSTRUCTIONS: Complete the user's request by clicking through the necessary elements step by step.
 
-VISUAL ANALYSIS: You will receive a screenshot of the current page that shows exactly what the user sees. 
+DOM ANALYSIS: You will receive HTML DOM elements that describe the current page state.
 
-CRITICAL: ALWAYS refer to the screenshot to understand the current UI state before making decisions:
-- Look at what's actually visible on the page
-- Check if elements are loaded, forms are filled, or content has changed
-- Use the screenshot to verify the current state before taking the next action
-- The screenshot shows the REAL current state - trust it over assumptions
+CRITICAL: Use the DOM element information to understand the current UI state before making decisions:
+- Look at what elements are available on the page
+- Check element titles, types, and attributes to understand their function
+- Use the DOM element list to make precise action decisions
+- Analyze the current page and determine what action is needed next to progress toward the goal
 
 Available DOM elements:
 ${elementsList
@@ -409,30 +400,11 @@ VALID EXAMPLE:
     messages.push(...historyMessages);
   }
 
-  // Add current user message with screenshot if available
-  if (screenshot) {
-    messages.push({
-      role: "user",
-      content: [
-        {
-          type: "text",
-          text: message,
-        },
-        {
-          type: "image_url",
-          image_url: {
-            url: screenshot,
-            detail: "high",
-          },
-        },
-      ],
-    });
-  } else {
-    messages.push({
-      role: "user",
-      content: message,
-    });
-  }
+  // Add current user message (text only, no screenshot)
+  messages.push({
+    role: "user",
+    content: message,
+  });
 
   const requestBody = {
     model: model,
@@ -440,13 +412,13 @@ VALID EXAMPLE:
     messages: messages,
   };
 
-  console.log("=== OPENAI API REQUEST DETAILS ===");
-  console.log("URL:", "https://api.openai.com/v1/chat/completions");
+  console.log("=== GROQ API REQUEST DETAILS ===");
+  console.log("URL:", "https://api.groq.com/openai/v1/chat/completions");
   console.log("API Key (first 10 chars):", API_KEY.substring(0, 10) + "...");
   console.log("Request Body:", JSON.stringify(requestBody, null, 2));
-  console.log("===================================");
+  console.log("==================================");
 
-  const response = await fetch("https://api.openai.com/v1/chat/completions", {
+  const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",

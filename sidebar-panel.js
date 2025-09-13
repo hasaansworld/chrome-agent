@@ -108,6 +108,7 @@
   }
 
 
+
   async function validateElementText(currentTabId, actionData, originalElements) {
     // If no elementText provided by LLM, skip validation
     if (!actionData.elementText) {
@@ -1599,50 +1600,11 @@ If failed: {"action":"retry","result":"the [action] did not occur, retry"}`;
             // Debug: Log response
             console.log("API Response received:", response);
 
-            // Display screenshot status and timings
-            if (response.screenshotStatus) {
-              console.log("Screenshot status:", response.screenshotStatus);
-              let statusMessage = "";
-              
-              if (response.screenshotStatus === "success") {
-                statusMessage = "📸 Screenshot captured successfully";
-              } else if (response.screenshotStatus === "failed") {
-                statusMessage = "❌ Screenshot capture failed";
-              } else if (response.screenshotStatus === "no_tab") {
-                statusMessage = "⚠️ No tab available for screenshot";
-              } else if (response.screenshotStatus === "tab_not_found") {
-                statusMessage = "❌ Tab not found or inaccessible for screenshot";
-              } else if (response.screenshotStatus === "restricted_url") {
-                statusMessage = "🔒 Screenshot not available (restricted URL)";
-              } else {
-                statusMessage = `🔧 Screenshot status: ${response.screenshotStatus}`;
-              }
-
-              // Add timing information if available
-              if (response.timings) {
-                const screenshotTime = response.timings.screenshot || 0;
-                const apiTime = response.timings.api || 0;
-                statusMessage += ` | ⏱️ Screenshot: ${screenshotTime}ms, API: ${apiTime}ms`;
-              }
-              
+            // Display API timing information
+            if (response.timings) {
+              const apiTime = response.timings.api || 0;
+              const statusMessage = `⏱️ API call completed in ${apiTime}ms`;
               addMessage("system", statusMessage);
-            } else {
-              console.log("No screenshot status in response");
-              let statusMessage = "⚠️ No screenshot status received";
-              
-              // Add timing information if available without screenshot status
-              if (response.timings) {
-                const screenshotTime = response.timings.screenshot || 0;
-                const apiTime = response.timings.api || 0;
-                statusMessage += ` | ⏱️ Screenshot: ${screenshotTime}ms, API: ${apiTime}ms`;
-              }
-              
-              addMessage("system", statusMessage);
-            }
-
-            // Display screenshot if available
-            if (response.screenshotData) {
-              displayScreenshot(response.screenshotData);
             }
 
             resolve(response.response);
