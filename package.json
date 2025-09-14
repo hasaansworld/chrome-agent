@@ -1,0 +1,21 @@
+{
+  "name": "chrome-test-agent",
+  "version": "1.0.0",
+  "description": "Chrome extension with LangChain-powered autonomous agent",
+  "main": "background.js",
+  "scripts": {
+    "build": "npm install",
+    "dev": "npm install && npm run watch",
+    "watch": "echo 'Watching for changes...'"
+  },
+  "dependencies": {
+    "@langchain/core": "^0.4.1",
+    "@langchain/langgraph": "^0.2.26",
+    "@langchain/openai": "^0.4.3",
+    "@langchain/community": "^0.4.6"
+  },
+  "devDependencies": {},
+  "keywords": ["chrome", "extension", "automation", "langchain", "agent"],
+  "author": "Your Name",
+  "license": "MIT"
+}
