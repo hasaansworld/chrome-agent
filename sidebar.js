@@ -24,7 +24,7 @@
   }
 
   function createSidebar() {
-    console.log('Creating sidebar...');
+    console.log("Creating sidebar...");
     // Remove any existing sidebar
     const existingSidebar = document.getElementById("chat-assistant-sidebar");
     if (existingSidebar) {
@@ -204,7 +204,7 @@
   }
 
   function toggleSidebar() {
-    console.log('Toggle sidebar called, isOpen:', isOpen);
+    console.log("Toggle sidebar called, isOpen:", isOpen);
     if (!isOpen) {
       showSidebar();
     } else {
@@ -236,15 +236,17 @@
 
     try {
       // Extract elements from the page without showing bounding boxes
-      const elementsData = window.extractInteractiveElements ? window.extractInteractiveElements() : { elements: [] };
+      const elementsData = window.extractInteractiveElements
+        ? window.extractInteractiveElements()
+        : { elements: [] };
       // const elementsData = window.showBoundingBoxes ? window.showBoundingBoxes() : { elements: [] };
-      
+
       // Add user message to conversation history
       conversationHistory.push({
         role: "user",
-        content: message
+        content: message,
       });
-      
+
       // Start autonomous agent loop
       await runAutonomousAgent(message, elementsData.elements);
     } catch (error) {
@@ -270,24 +272,26 @@
 
   async function callGroqAPI(message, elements = [], conversationHistory = []) {
     // Get selected model
-    const modelSelector = document.getElementById('model-selector');
-    const selectedModel = modelSelector ? modelSelector.value : 'meta-llama/llama-4-maverick-17b-128e-instruct';
-    
+    const modelSelector = document.getElementById("model-selector");
+    const selectedModel = modelSelector
+      ? modelSelector.value
+      : "meta-llama/llama-4-maverick-17b-128e-instruct";
+
     return new Promise((resolve, reject) => {
       chrome.runtime.sendMessage(
-        { 
-          action: 'callClaudeAPI', 
-          message: message, 
+        {
+          action: "callClaudeAPI",
+          message: message,
           elements: elements,
           conversationHistory: conversationHistory,
-          model: selectedModel
+          model: selectedModel,
         },
         (response) => {
           if (chrome.runtime.lastError) {
             reject(new Error(chrome.runtime.lastError.message));
             return;
           }
-          
+
           if (response.success) {
             resolve(response.response);
           } else {
@@ -302,162 +306,214 @@
     let currentElements = initialElements;
     let stepCount = 0;
     const maxSteps = 10; // Safety limit
-    
-    addMessageToChat("system", `🤖 Starting autonomous agent for task: "${initialMessage}"`);
-    
+
+    addMessageToChat(
+      "system",
+      `🤖 Starting autonomous agent for task: "${initialMessage}"`
+    );
+
     while (stepCount < maxSteps) {
       stepCount++;
-      
+
       try {
         // Get fresh elements for each step
-        const elementsData = window.extractInteractiveElements ? window.extractInteractiveElements() : { elements: [] };
+        const elementsData = window.extractInteractiveElements
+          ? window.extractInteractiveElements()
+          : { elements: [] };
         currentElements = elementsData.elements;
-        
+
         // Build context message for this step
-        const contextMessage = stepCount === 1 ? 
-          initialMessage : 
-          `Continue with the task: "${initialMessage}". You have already taken ${stepCount - 1} steps. Analyze the current page state and determine what to do next.`;
-        
+        const contextMessage =
+          stepCount === 1
+            ? initialMessage
+            : `Continue with the task: "${initialMessage}". You have already taken ${
+                stepCount - 1
+              } steps. Analyze the current page state and determine what to do next.`;
+
         // Add current user message to conversation history
         conversationHistory.push({
           role: "user",
-          content: contextMessage
+          content: contextMessage,
         });
-        
+
         // Call LLM with current state and updated context
-        const response = await callGroqAPI(contextMessage, currentElements, conversationHistory);
-        
+        const response = await callGroqAPI(
+          contextMessage,
+          currentElements,
+          conversationHistory
+        );
+
         // Parse response
         const jsonResponse = JSON.parse(response);
-        
+
         // Add to conversation history
         conversationHistory.push({
           role: "assistant",
-          content: response
+          content: response,
         });
-        
+
         // Display response
-        let displayMessage = `Step ${stepCount}: ${JSON.stringify(jsonResponse, null, 2)}`;
-        
-        if (jsonResponse.elementIndex !== undefined && currentElements[jsonResponse.elementIndex]) {
+        let displayMessage = `Step ${stepCount}: ${JSON.stringify(
+          jsonResponse,
+          null,
+          2
+        )}`;
+
+        if (
+          jsonResponse.elementIndex !== undefined &&
+          currentElements[jsonResponse.elementIndex]
+        ) {
           const element = currentElements[jsonResponse.elementIndex];
-          displayMessage += `\n\nElement Details:\n- Type: ${element.tagName}${element.type ? `[${element.type}]` : ''}\n- Content: "${element.title}"\n- Element Type: ${element.elementType}`;
+          displayMessage += `\n\nElement Details:\n- Type: ${element.tagName}${
+            element.type ? `[${element.type}]` : ""
+          }\n- Content: "${element.title}"\n- Element Type: ${
+            element.elementType
+          }`;
         }
-        
+
         addMessageToChat("assistant", displayMessage);
-        
+
         // Check if we should continue
         if (jsonResponse.action === "none") {
-          addMessageToChat("system", `🎯 Agent completed task: ${jsonResponse.message}`);
+          addMessageToChat(
+            "system",
+            `🎯 Agent completed task: ${jsonResponse.message}`
+          );
           break;
-        } else if (jsonResponse.action === "click" && jsonResponse.elementIndex !== undefined) {
+        } else if (
+          jsonResponse.action === "click" &&
+          jsonResponse.elementIndex !== undefined
+        ) {
           // Execute click
           executeClick(jsonResponse.elementIndex, currentElements);
-          
+
           // Wait for page updates after click
-          await new Promise(resolve => setTimeout(resolve, 2000));
-          
+          await new Promise((resolve) => setTimeout(resolve, 2000));
+
           // Add a system message about continuing
           addMessageToChat("system", `⏭️ Continuing to next step...`);
         } else {
-          addMessageToChat("system", `❌ Invalid response from agent, stopping`);
+          addMessageToChat(
+            "system",
+            `❌ Invalid response from agent, stopping`
+          );
           break;
         }
-        
       } catch (error) {
         console.error("Agent step failed:", error);
         addMessageToChat("system", `❌ Agent error: ${error.message}`);
         break;
       }
     }
-    
+
     if (stepCount >= maxSteps) {
-      addMessageToChat("system", `⚠️ Agent reached maximum steps (${maxSteps}), stopping for safety`);
+      addMessageToChat(
+        "system",
+        `⚠️ Agent reached maximum steps (${maxSteps}), stopping for safety`
+      );
     }
   }
 
   function executeClick(elementIndex, elements) {
     if (elementIndex < 0 || elementIndex >= elements.length) {
       console.error("Invalid element index:", elementIndex);
-      addMessageToChat("system", `ERROR: Invalid element index ${elementIndex}. Available indices: 0-${elements.length - 1}`);
+      addMessageToChat(
+        "system",
+        `ERROR: Invalid element index ${elementIndex}. Available indices: 0-${
+          elements.length - 1
+        }`
+      );
       return;
     }
 
     const elementInfo = elements[elementIndex];
     const domElement = elementInfo.domElement;
-    
+
     console.log("Attempting to click element:", {
       index: elementIndex,
       title: elementInfo.title,
       tagName: elementInfo.tagName,
       domElement: domElement,
       isConnected: domElement?.isConnected,
-      offsetParent: domElement?.offsetParent
+      offsetParent: domElement?.offsetParent,
     });
-    
+
     if (!domElement) {
       console.error("DOM element not found");
       addMessageToChat("system", "ERROR: DOM element not found");
       return;
     }
-    
+
     if (!domElement.isConnected) {
       console.error("DOM element is no longer in the document");
       addMessageToChat("system", "ERROR: Element is no longer in the document");
       return;
     }
-    
+
     try {
       // Scroll element into view first
-      domElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      
+      domElement.scrollIntoView({ behavior: "smooth", block: "center" });
+
       // Wait a moment for scroll
       setTimeout(() => {
         try {
           // Try multiple interaction methods
           console.log("Trying method 1: element.click()");
           domElement.click();
-          
+
           // Also try mouse events for stubborn elements
           setTimeout(() => {
             console.log("Trying method 2: mousedown/mouseup");
-            ['mousedown', 'mouseup', 'click'].forEach(eventType => {
+            ["mousedown", "mouseup", "click"].forEach((eventType) => {
               const event = new MouseEvent(eventType, {
                 view: window,
                 bubbles: true,
                 cancelable: true,
-                clientX: domElement.getBoundingClientRect().left + domElement.getBoundingClientRect().width / 2,
-                clientY: domElement.getBoundingClientRect().top + domElement.getBoundingClientRect().height / 2
+                clientX:
+                  domElement.getBoundingClientRect().left +
+                  domElement.getBoundingClientRect().width / 2,
+                clientY:
+                  domElement.getBoundingClientRect().top +
+                  domElement.getBoundingClientRect().height / 2,
               });
               domElement.dispatchEvent(event);
             });
-            
+
             // For some elements, try focus + Enter
-            if (domElement.tagName === 'BUTTON' || domElement.getAttribute('role') === 'button') {
+            if (
+              domElement.tagName === "BUTTON" ||
+              domElement.getAttribute("role") === "button"
+            ) {
               console.log("Trying method 3: focus + Enter key");
               domElement.focus();
-              const enterEvent = new KeyboardEvent('keydown', {
-                key: 'Enter',
-                code: 'Enter',
+              const enterEvent = new KeyboardEvent("keydown", {
+                key: "Enter",
+                code: "Enter",
                 bubbles: true,
-                cancelable: true
+                cancelable: true,
               });
               domElement.dispatchEvent(enterEvent);
             }
-            
           }, 100);
-          
         } catch (innerError) {
           console.error("All click methods failed:", innerError);
-          addMessageToChat("system", `ERROR: All click methods failed - ${innerError.message}`);
+          addMessageToChat(
+            "system",
+            `ERROR: All click methods failed - ${innerError.message}`
+          );
         }
       }, 200);
-      
-      addMessageToChat("system", `✓ Attempted click on: ${elementInfo.title || elementInfo.tagName}`);
-      
+
+      // addMessageToChat(
+      //   "system",
+      //   `✓ Attempted click on: ${elementInfo.title || elementInfo.tagName}`
+      // );
     } catch (error) {
       console.error("Click setup failed:", error);
-      addMessageToChat("system", `ERROR: Click setup failed - ${error.message}`);
+      addMessageToChat(
+        "system",
+        `ERROR: Click setup failed - ${error.message}`
+      );
     }
   }
 
@@ -492,7 +548,7 @@
 
   // Listen for messages from background script
   chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-    console.log('Received message:', request);
+    console.log("Received message:", request);
     if (request.action === "toggleSidebar") {
       toggleSidebar();
       sendResponse({ success: true });

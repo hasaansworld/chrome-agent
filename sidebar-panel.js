@@ -49,8 +49,8 @@
 
     // Click on screenshot to open in new tab
     screenshotImage.addEventListener("click", () => {
-      if (screenshotImage.src && screenshotImage.src !== '') {
-        window.open(screenshotImage.src, '_blank');
+      if (screenshotImage.src && screenshotImage.src !== "") {
+        window.open(screenshotImage.src, "_blank");
       }
     });
   }
@@ -89,7 +89,7 @@
 
   function handleScreenshotToggle() {
     const isVisible = screenshotSection.style.display !== "none";
-    
+
     if (isVisible) {
       screenshotSection.style.display = "none";
       screenshotToggle.textContent = "Show";
@@ -107,8 +107,11 @@
     }
   }
 
-
-  async function validateElementText(currentTabId, actionData, originalElements) {
+  async function validateElementText(
+    currentTabId,
+    actionData,
+    originalElements
+  ) {
     // If no elementText provided by LLM, skip validation
     if (!actionData.elementText) {
       return { isValid: true };
@@ -118,9 +121,9 @@
       // Get fresh elements from the page
       const elementsData = await getElementsFromTab(currentTabId);
       if (!elementsData || !elementsData.data || !elementsData.data.elements) {
-        return { 
-          isValid: false, 
-          errorMessage: "❌ Could not extract elements for validation" 
+        return {
+          isValid: false,
+          errorMessage: "❌ Could not extract elements for validation",
         };
       }
 
@@ -132,7 +135,9 @@
       if (targetIndex < 0 || targetIndex >= currentElements.length) {
         return {
           isValid: false,
-          errorMessage: `❌ Element index ${targetIndex} out of range (0-${currentElements.length - 1})`
+          errorMessage: `❌ Element index ${targetIndex} out of range (0-${
+            currentElements.length - 1
+          })`,
         };
       }
 
@@ -140,7 +145,10 @@
       const actualText = (targetElement.title || "").toLowerCase().trim();
 
       // Check if text matches (starts with expected text)
-      if (actualText.startsWith(expectedText) || expectedText.startsWith(actualText)) {
+      if (
+        actualText.startsWith(expectedText) ||
+        expectedText.startsWith(actualText)
+      ) {
         return { isValid: true };
       }
 
@@ -148,18 +156,25 @@
       const matchingElements = [];
       currentElements.forEach((element, index) => {
         const elementText = (element.title || "").toLowerCase().trim();
-        if (elementText.startsWith(expectedText) || expectedText.startsWith(elementText)) {
-          matchingElements.push({ index, text: element.title, tagName: element.tagName });
+        if (
+          elementText.startsWith(expectedText) ||
+          expectedText.startsWith(elementText)
+        ) {
+          matchingElements.push({
+            index,
+            text: element.title,
+            tagName: element.tagName,
+          });
         }
       });
 
       let errorMessage = `❌ Element text mismatch at index ${targetIndex}:\n`;
       errorMessage += `   Expected: "${actionData.elementText}"\n`;
       errorMessage += `   Found: "${targetElement.title}"\n`;
-      
+
       if (matchingElements.length > 0) {
         errorMessage += `   Did you mean to click one of these instead?\n`;
-        matchingElements.forEach(match => {
+        matchingElements.forEach((match) => {
           errorMessage += `   • Index ${match.index}: ${match.tagName} - "${match.text}"\n`;
         });
       } else {
@@ -168,13 +183,12 @@
 
       return {
         isValid: false,
-        errorMessage: errorMessage
+        errorMessage: errorMessage,
       };
-
     } catch (error) {
       return {
         isValid: false,
-        errorMessage: `❌ Validation error: ${error.message}`
+        errorMessage: `❌ Validation error: ${error.message}`,
       };
     }
   }
@@ -231,16 +245,20 @@
         actionData.elementIndex !== undefined
       ) {
         // Validate element text before clicking
-        const validationResult = await validateElementText(currentTabId, actionData, originalElements);
+        const validationResult = await validateElementText(
+          currentTabId,
+          actionData,
+          originalElements
+        );
         if (!validationResult.isValid) {
           addMessage("system", validationResult.errorMessage);
-          
+
           // Add validation failure to conversation history for LLM feedback
           conversationHistory.push({
             role: "system",
-            content: `VALIDATION FAILED: ${validationResult.errorMessage}`
+            content: `VALIDATION FAILED: ${validationResult.errorMessage}`,
           });
-          
+
           return false;
         }
 
@@ -766,10 +784,14 @@ Output: {"tasks": ["open new tab with URL https://gmail.com", "click compose new
       }
 
       // Execute the action
-      const actionSuccess = await executeAction(actionData, currentTabId, elementsData.data.elements);
+      const actionSuccess = await executeAction(
+        actionData,
+        currentTabId,
+        elementsData.data.elements
+      );
 
       if (actionSuccess) {
-        addMessage("system", "✅ Action completed successfully");
+        // addMessage("system", "✅ Action completed successfully");
 
         // Minimal wait for DOM updates (only for click/input actions that change the page)
         if (
@@ -1603,7 +1625,7 @@ If failed: {"action":"retry","result":"the [action] did not occur, retry"}`;
             if (response.screenshotStatus) {
               console.log("Screenshot status:", response.screenshotStatus);
               let statusMessage = "";
-              
+
               if (response.screenshotStatus === "success") {
                 statusMessage = "📸 Screenshot captured successfully";
               } else if (response.screenshotStatus === "failed") {
@@ -1611,7 +1633,8 @@ If failed: {"action":"retry","result":"the [action] did not occur, retry"}`;
               } else if (response.screenshotStatus === "no_tab") {
                 statusMessage = "⚠️ No tab available for screenshot";
               } else if (response.screenshotStatus === "tab_not_found") {
-                statusMessage = "❌ Tab not found or inaccessible for screenshot";
+                statusMessage =
+                  "❌ Tab not found or inaccessible for screenshot";
               } else if (response.screenshotStatus === "restricted_url") {
                 statusMessage = "🔒 Screenshot not available (restricted URL)";
               } else {
@@ -1624,19 +1647,19 @@ If failed: {"action":"retry","result":"the [action] did not occur, retry"}`;
                 const apiTime = response.timings.api || 0;
                 statusMessage += ` | ⏱️ Screenshot: ${screenshotTime}ms, API: ${apiTime}ms`;
               }
-              
+
               addMessage("system", statusMessage);
             } else {
               console.log("No screenshot status in response");
               let statusMessage = "⚠️ No screenshot status received";
-              
+
               // Add timing information if available without screenshot status
               if (response.timings) {
                 const screenshotTime = response.timings.screenshot || 0;
                 const apiTime = response.timings.api || 0;
                 statusMessage += ` | ⏱️ Screenshot: ${screenshotTime}ms, API: ${apiTime}ms`;
               }
-              
+
               addMessage("system", statusMessage);
             }
 

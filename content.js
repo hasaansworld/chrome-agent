@@ -764,8 +764,6 @@ function executeClickOnElement(elementIndex, elements) {
   }
 
   const elementInfo = elements[elementIndex];
-
-  // Use the DOM element reference that was stored during extraction
   const domElement = elementInfo.domElement;
 
   if (!domElement) {
@@ -792,96 +790,57 @@ function executeClickOnElement(elementIndex, elements) {
   });
 
   try {
-    // Scroll element into view first
     domElement.scrollIntoView({ behavior: "smooth", block: "center" });
 
-    // Create a highlight bounding box for the element being clicked
-    const highlightBox = createClickHighlight(domElement, elementIndex);
+    // optional highlight
+    createClickHighlight?.(domElement, elementIndex);
 
-    // Get element position for mouse events
     const rect = domElement.getBoundingClientRect();
     const centerX = rect.left + rect.width / 2;
     const centerY = rect.top + rect.height / 2;
 
-    // Return Promise for async execution
     return new Promise((resolve) => {
       setTimeout(() => {
         try {
-          // Sequential click methods with failure detection
-          let currentMethodIndex = 0;
-          const initialPageState = capturePageState();
-          let hasResolvedAlready = false;
+          // Simulate a real user click sequence
+          const down = new MouseEvent("mousedown", {
+            bubbles: true,
+            cancelable: true,
+            clientX: centerX,
+            clientY: centerY,
+            button: 0,
+          });
+          domElement.dispatchEvent(down);
 
-          const clickMethods = [
-            () => tryNestedClickableElement(domElement),
-            () => tryComprehensiveEventSimulation(domElement, centerX, centerY),
-            () => tryDirectClick(domElement),
-            () => tryMultipleCoordinateClicks(domElement),
-            () => tryClickableChildElements(domElement),
-            () => tryPointerEvents(domElement, centerX, centerY),
-          ];
+          const up = new MouseEvent("mouseup", {
+            bubbles: true,
+            cancelable: true,
+            clientX: centerX,
+            clientY: centerY,
+            button: 0,
+          });
+          domElement.dispatchEvent(up);
 
-          const executeNextMethod = () => {
-            if (hasResolvedAlready) return; // Prevent execution if already resolved
+          const click = new MouseEvent("click", {
+            bubbles: true,
+            cancelable: true,
+            clientX: centerX,
+            clientY: centerY,
+            button: 0,
+          });
+          domElement.dispatchEvent(click);
 
-            if (currentMethodIndex >= clickMethods.length) {
-              resolve({
-                success: true,
-                message: `All click methods attempted on: ${
-                  elementInfo.title || elementInfo.tagName
-                }`,
-              });
-              return;
-            }
-
-            console.log(
-              `Trying method ${currentMethodIndex + 1} of ${
-                clickMethods.length
-              }`
-            );
-
-            // Execute current method
-            clickMethods[currentMethodIndex]();
-
-            // Check for success after a delay
-            setTimeout(() => {
-              if (hasResolvedAlready) return; // Prevent execution if already resolved
-
-              const currentPageState = capturePageState();
-              const hasChanged = hasPageChanged(
-                initialPageState,
-                currentPageState
-              );
-
-              if (hasChanged) {
-                console.log(
-                  `Method ${currentMethodIndex + 1} succeeded - page changed`
-                );
-                hasResolvedAlready = true;
-                resolve({
-                  success: true,
-                  message: `Click successful using method ${
-                    currentMethodIndex + 1
-                  }: ${elementInfo.title || elementInfo.tagName}`,
-                });
-              } else {
-                console.log(
-                  `Method ${
-                    currentMethodIndex + 1
-                  } failed - no page change detected`
-                );
-                currentMethodIndex++;
-                executeNextMethod();
-              }
-            }, 500); // Wait for page changes to manifest
-          };
-
-          executeNextMethod();
+          resolve({
+            success: true,
+            message: `Click simulated on: ${
+              elementInfo.title || elementInfo.tagName
+            }`,
+          });
         } catch (error) {
           console.error("Click execution failed:", error);
           resolve({ success: false, error: `Click failed: ${error.message}` });
         }
-      }, 300); // Wait for scroll to complete
+      }, 300); // wait for scroll to finish
     });
   } catch (error) {
     return Promise.resolve({
@@ -1111,10 +1070,51 @@ function tryComprehensiveEventSimulation(domElement, centerX, centerY) {
   });
 }
 
+function simulateRealClick(el) {
+  const rect = el.getBoundingClientRect();
+  const centerX = rect.left + rect.width / 2;
+  const centerY = rect.top + rect.height / 2;
+
+  // Sequence of pointer + mouse events
+  const events = [
+    ["pointerover", {}],
+    ["pointerenter", {}],
+    ["mouseover", {}],
+    ["mouseenter", {}],
+    ["pointerdown", { buttons: 1 }],
+    ["mousedown", { buttons: 1 }],
+    ["pointerup", { buttons: 0 }],
+    ["mouseup", { buttons: 0 }],
+    ["click", { detail: 1 }],
+  ];
+
+  for (const [type, extra] of events) {
+    const evt = type.startsWith("pointer")
+      ? new PointerEvent(type, {
+          bubbles: true,
+          cancelable: true,
+          clientX: centerX,
+          clientY: centerY,
+          pointerType: "mouse",
+          ...extra,
+        })
+      : new MouseEvent(type, {
+          bubbles: true,
+          cancelable: true,
+          clientX: centerX,
+          clientY: centerY,
+          button: 0,
+          ...extra,
+        });
+    el.dispatchEvent(evt);
+  }
+}
+
 function tryDirectClick(domElement) {
   console.log("Method 3: Direct element.click()");
   try {
     domElement.click();
+    simulateRealClick(domElement);
   } catch (e) {
     console.log("Direct click failed:", e);
   }

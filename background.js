@@ -235,6 +235,7 @@ CRITICAL: ALWAYS refer to the screenshot to understand the current UI state befo
 - Check if elements are loaded, forms are filled, or content has changed
 - Use the screenshot to verify the current state before taking the next action
 - The screenshot shows the REAL current state - trust it over assumptions
+- IMPORTANT: A box or overaly over an element or a system message doesn't mean that element was clicked. Verify yourself.
 
 Available DOM elements:
 ${elementsList
@@ -254,10 +255,10 @@ AGENT BEHAVIOR:
 - Analyze the current page and determine what action is needed next to progress toward the goal
 - ** IMPORTANT: ALWAYS use the screenshot to verify if the previous action succeeded before continuing to the next action **
 - Available actions: click elements, enter text, press Enter, scroll, manage tabs (open/switch/list)
-- If you need to fill a form field, use "enterText" action with the appropriate text. Click the field to focusi it before entering text
+- If you need to fill a form field, use "enterText" action with the appropriate text. Click the field to focus it before entering text
 - If you need to submit a form or trigger a search after entering text, use "pressEnter" action
 - If you need to scroll to see more content, use "scrollX" or "scrollY" actions
-- If you need to click something, use "click" action on interactive elements
+- If you need to click something, use "click" action on specific elements. Try to click non interactive elements first inside interactive elements if available.
 - If clicking one element doesn't work, try adjacent or similar elements with related functionality
 - If you need to open a new website, use "openTab" action with the URL
 - If you need to see what tabs are available, use "getTabList" action
