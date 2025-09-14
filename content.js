@@ -590,49 +590,67 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
       // Compare elements: what LLM expected vs what we're actually clicking
       console.log("=== ELEMENT COMPARISON DEBUG ===");
-      if (request.originalElements && request.originalElements[request.elementIndex]) {
-        const llmExpectedElement = request.originalElements[request.elementIndex];
+      if (
+        request.originalElements &&
+        request.originalElements[request.elementIndex]
+      ) {
+        const llmExpectedElement =
+          request.originalElements[request.elementIndex];
         const actualElement = elements[request.elementIndex];
-        
+
         console.log("🤖 LLM Expected Element:", {
           index: request.elementIndex,
           tagName: llmExpectedElement.tagName,
           title: llmExpectedElement.title,
           type: llmExpectedElement.type,
-          elementType: llmExpectedElement.elementType
+          elementType: llmExpectedElement.elementType,
         });
-        
+
         if (actualElement) {
           console.log("🎯 Actual Element Found:", {
             index: request.elementIndex,
             tagName: actualElement.tagName,
             title: actualElement.title,
             type: actualElement.type,
-            elementType: actualElement.elementType
+            elementType: actualElement.elementType,
           });
-          
+
           // Check if they match
-          const elementsMatch = 
+          const elementsMatch =
             llmExpectedElement.tagName === actualElement.tagName &&
             llmExpectedElement.title === actualElement.title &&
             llmExpectedElement.type === actualElement.type;
-            
-          console.log(elementsMatch ? "✅ Elements MATCH" : "❌ Elements DIFFER");
-          
+
+          console.log(
+            elementsMatch ? "✅ Elements MATCH" : "❌ Elements DIFFER"
+          );
+
           if (!elementsMatch) {
             console.log("⚠️ MISMATCH DETAILS:");
             if (llmExpectedElement.tagName !== actualElement.tagName) {
-              console.log(`  TagName: ${llmExpectedElement.tagName} → ${actualElement.tagName}`);
+              console.log(
+                `  TagName: ${llmExpectedElement.tagName} → ${actualElement.tagName}`
+              );
             }
             if (llmExpectedElement.title !== actualElement.title) {
-              console.log(`  Title: "${llmExpectedElement.title}" → "${actualElement.title}"`);
+              console.log(
+                `  Title: "${llmExpectedElement.title}" → "${actualElement.title}"`
+              );
             }
             if (llmExpectedElement.type !== actualElement.type) {
-              console.log(`  Type: ${llmExpectedElement.type} → ${actualElement.type}`);
+              console.log(
+                `  Type: ${llmExpectedElement.type} → ${actualElement.type}`
+              );
             }
           }
         } else {
-          console.log("❌ No element found at index", request.elementIndex, "- only", elements.length, "elements available");
+          console.log(
+            "❌ No element found at index",
+            request.elementIndex,
+            "- only",
+            elements.length,
+            "elements available"
+          );
         }
       } else {
         console.log("⚠️ No original elements provided for comparison");
@@ -1346,67 +1364,47 @@ function pressEnterOnElement(elementIndex, elements) {
   });
 
   try {
-    // Scroll element into view first
     domElement.scrollIntoView({ behavior: "smooth", block: "center" });
 
     return new Promise((resolve) => {
       setTimeout(() => {
         try {
-          // Focus the element first
           domElement.focus();
 
-          // Create and dispatch Enter key events
-          const keyDownEvent = new KeyboardEvent("keydown", {
-            key: "Enter",
-            code: "Enter",
-            keyCode: 13,
-            which: 13,
-            bubbles: true,
-            cancelable: true,
-          });
-
-          const keyPressEvent = new KeyboardEvent("keypress", {
-            key: "Enter",
-            code: "Enter",
-            keyCode: 13,
-            which: 13,
-            bubbles: true,
-            cancelable: true,
-          });
-
-          const keyUpEvent = new KeyboardEvent("keyup", {
-            key: "Enter",
-            code: "Enter",
-            keyCode: 13,
-            which: 13,
-            bubbles: true,
-            cancelable: true,
-          });
-
-          // Dispatch all keyboard events in sequence
-          domElement.dispatchEvent(keyDownEvent);
-          domElement.dispatchEvent(keyPressEvent);
-          domElement.dispatchEvent(keyUpEvent);
-
-          // For form elements, also try triggering submit on the parent form
+          // If it's an input or textarea, try to submit its form directly
           if (
             domElement.tagName === "INPUT" ||
             domElement.tagName === "TEXTAREA"
           ) {
             const form = domElement.closest("form");
             if (form) {
-              // Trigger form submit event
-              const submitEvent = new Event("submit", {
-                bubbles: true,
-                cancelable: true,
+              form.requestSubmit
+                ? form.requestSubmit() // modern browsers
+                : form.submit(); // fallback
+
+              return resolve({
+                success: true,
+                message: "Form submitted via Enter simulation",
               });
-              form.dispatchEvent(submitEvent);
             }
           }
 
+          // Otherwise, just dispatch synthetic events as fallback
+          ["keydown", "keypress", "keyup"].forEach((type) => {
+            const event = new KeyboardEvent(type, {
+              key: "Enter",
+              code: "Enter",
+              keyCode: 13,
+              which: 13,
+              bubbles: true,
+              cancelable: true,
+            });
+            domElement.dispatchEvent(event);
+          });
+
           resolve({
             success: true,
-            message: `Successfully pressed Enter on ${
+            message: `Dispatched Enter events on ${
               elementInfo.title || elementInfo.tagName
             }`,
           });
@@ -1417,7 +1415,7 @@ function pressEnterOnElement(elementIndex, elements) {
             error: `Press Enter failed: ${error.message}`,
           });
         }
-      }, 300); // Wait for scroll to complete
+      }, 300);
     });
   } catch (error) {
     return Promise.resolve({
