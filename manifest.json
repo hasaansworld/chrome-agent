@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "LangChain Web Agent",
-  "version": "2.0",
-  "description": "Advanced web automation assistant powered by LangChain",
+  "name": "Chat Assistant",
+  "version": "1.0",
+  "description": "AI Chat Assistant sidebar",
   "permissions": [
     "activeTab",
     "sidePanel",
@@ -10,14 +10,12 @@
   ],
   "host_permissions": [
     "https://api.openai.com/*",
-    "https://api.groq.com/*",
-    "http://localhost:3001/*",
     "<all_urls>"
   ],
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
-      "js": ["langchain-client.js", "content.js"],
+      "js": ["content.js"],
       "run_at": "document_end",
       "all_frames": false
     }
@@ -26,7 +24,7 @@
     "service_worker": "background.js"
   },
   "action": {
-    "default_title": "Open LangChain Web Agent"
+    "default_title": "Open Chat Assistant"
   },
   "side_panel": {
     "default_path": "sidebar.html"
