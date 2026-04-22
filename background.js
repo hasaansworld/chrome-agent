@@ -10,7 +10,7 @@ chrome.action.onClicked.addListener(async (tab) => {
 
 // Handle messages from content scripts
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  if (request.action === "callClaudeAPI") {
+  if (request.action === "callClaudeAPI" || request.action === "callAnthropicAPI") {
     // Use async/await pattern for better error handling
     (async () => {
       try {
@@ -71,13 +71,13 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           screenshotTime = 0;
         }
 
-        // Call OpenAI API with or without screenshot
+        // Call Anthropic API with or without screenshot
         const apiStart = performance.now();
-        const response = await callOpenAIAPI(
+        const response = await callAnthropicAPI(
           request.message,
           request.elements || [],
           request.conversationHistory || [],
-          request.model || "gpt-4o-2024-11-20",
+          request.model || "claude-haiku-4-5-20251001",
           screenshot
         );
         const apiTime = Math.round(performance.now() - apiStart);
@@ -192,24 +192,23 @@ async function captureTabScreenshot(tabId) {
   }
 }
 
-async function callOpenAIAPI(
+async function callAnthropicAPI(
   message,
   elements = [],
   conversationHistory = [],
-  model = "gpt-4o-2024-11-20",
+  model = "claude-haiku-4-5-20251001",
   screenshot = null
 ) {
-  // Read API key from environment - Note: In Chrome extension, you would need to read from storage or inject it
-  const API_KEY =
-    "REMOVED_OPENAI_KEY";
+  // API key hardcoded from .env file
+  const API_KEY = "REMOVED_ANTHROPIC_KEY";
 
-  if (!API_KEY || API_KEY === "your-openai-api-key-here") {
+  if (!API_KEY) {
     throw new Error(
-      "Please configure your OpenAI API key in the extension code."
+      "Please set the ANTHROPIC_API_KEY."
     );
   }
 
-  console.log("=== OPENAI API CALL DEBUG ===");
+  console.log("=== ANTHROPIC API CALL DEBUG ===");
   console.log("Elements count:", elements.length);
   console.log("Conversation history length:", conversationHistory.length);
   console.log("Model:", model);
@@ -395,23 +394,34 @@ INVALID EXAMPLES (DO NOT DO THIS):
 VALID EXAMPLE:
 {"action": "click", "elementIndex": 5, "elementText": "Login", "message": "I identified the login button and will click it to proceed with authentication"}`;
 
-  // Build messages array: system prompt first, then conversation history, then current user message
-  const messages = [
-    {
-      role: "system",
-      content: systemPrompt,
-    },
-  ];
+  // Build messages array for Anthropic API (system prompt is separate)
+  const messages = [];
 
-  // Add all conversation history except the last message (which should be the current user message)
+  // Add conversation history: first message + last 3 messages (excluding the current message)
   if (conversationHistory.length > 0) {
-    // Add all but the last message from history (the last one is the current user message we just added)
-    const historyMessages = conversationHistory.slice(0, -1);
-    messages.push(...historyMessages);
+    const allHistory = conversationHistory.slice(0, -1); // Exclude current message
+
+    // Convert any "system" role messages to "user" role as Anthropic doesn't support system in messages array
+    const convertedHistory = allHistory.map(msg =>
+      msg.role === "system" ? { ...msg, role: "user" } : msg
+    );
+
+    if (convertedHistory.length <= 4) {
+      // If we have 4 or fewer messages, include all
+      messages.push(...convertedHistory);
+    } else {
+      // Include first message + last 3 messages
+      messages.push(convertedHistory[0]); // First message
+      messages.push(...convertedHistory.slice(-3)); // Last 3 messages
+    }
   }
 
   // Add current user message with screenshot if available
   if (screenshot) {
+    // Convert base64 screenshot to proper format for Anthropic
+    // Anthropic expects image data without the data:image/png;base64, prefix
+    const imageData = screenshot.replace(/^data:image\/\w+;base64,/, '');
+
     messages.push({
       role: "user",
       content: [
@@ -420,10 +430,11 @@ VALID EXAMPLE:
           text: message,
         },
         {
-          type: "image_url",
-          image_url: {
-            url: screenshot,
-            detail: "high",
+          type: "image",
+          source: {
+            type: "base64",
+            media_type: "image/png",
+            data: imageData,
           },
         },
       ],
@@ -435,23 +446,32 @@ VALID EXAMPLE:
     });
   }
 
+  // Add assistant prefill to force JSON output
+  messages.push({
+    role: "assistant",
+    content: "{",
+  });
+
   const requestBody = {
     model: model,
     max_tokens: 2000, // Increased token limit for better responses
+    system: systemPrompt, // Anthropic uses separate system parameter
     messages: messages,
   };
 
-  console.log("=== OPENAI API REQUEST DETAILS ===");
-  console.log("URL:", "https://api.openai.com/v1/chat/completions");
+  console.log("=== ANTHROPIC API REQUEST DETAILS ===");
+  console.log("URL:", "https://api.anthropic.com/v1/messages");
   console.log("API Key (first 10 chars):", API_KEY.substring(0, 10) + "...");
   console.log("Request Body:", JSON.stringify(requestBody, null, 2));
   console.log("===================================");
 
-  const response = await fetch("https://api.openai.com/v1/chat/completions", {
+  const response = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${API_KEY}`,
+      "x-api-key": API_KEY,
+      "anthropic-version": "2023-06-01",
+      "anthropic-dangerous-direct-browser-access": "true",
     },
     body: JSON.stringify(requestBody),
   });
@@ -469,5 +489,7 @@ VALID EXAMPLE:
   }
 
   const data = await response.json();
-  return data.choices[0].message.content;
+  // Anthropic API returns content in a different format
+  // Prepend the "{" since we used it as a prefill
+  return "{" + data.content[0].text;
 }
