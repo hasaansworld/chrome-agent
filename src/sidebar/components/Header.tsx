@@ -26,7 +26,7 @@ export function Header({ view, provider, model, onOpenSettings, onBack }: Props)
         )}
         <div className="min-w-0">
           <div className="text-sm font-semibold truncate">
-            {view === "settings" ? "Settings" : "Chat Assistant"}
+            {view === "settings" ? "Settings" : "Chrome Agent"}
           </div>
           {view === "chat" && (
             <div className="text-xxs text-text-muted truncate">{modelLabel}</div>

@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Chat Assistant",
+  "name": "Chrome Agent",
   "version": "1.0",
-  "description": "AI Chat Assistant sidebar",
+  "description": "An AI agent that can operate your browser, in a side panel.",
   "permissions": [
     "activeTab",
     "sidePanel",
@@ -29,7 +29,7 @@
     "type": "module"
   },
   "action": {
-    "default_title": "Open Chat Assistant"
+    "default_title": "Open Chrome Agent"
   },
   "side_panel": {
     "default_path": "src/sidebar/index.html"
