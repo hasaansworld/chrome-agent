@@ -52,7 +52,7 @@ export function getModelLabel(provider: ProviderId, modelId: string): string {
   return getModelsFor(provider).find((m) => m.id === modelId)?.label ?? modelId;
 }
 
-export const DEFAULT_PROVIDER: ProviderId = "anthropic";
+export const DEFAULT_PROVIDER: ProviderId = "openai";
 export const DEFAULT_MODEL = getDefaultModelFor(DEFAULT_PROVIDER);
 
 export const DEFAULT_MAX_STEPS = 100;
