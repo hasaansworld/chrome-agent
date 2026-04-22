@@ -1,4 +1,6 @@
 // Background script for Chat Assistant
+importScripts("config.js");
+
 chrome.action.onClicked.addListener(async (tab) => {
   // Open the sidebar panel
   try {
@@ -199,8 +201,8 @@ async function callAnthropicAPI(
   model = "claude-haiku-4-5-20251001",
   screenshot = null
 ) {
-  // API key hardcoded from .env file
-  const API_KEY = "REMOVED_ANTHROPIC_KEY";
+  // Loaded from config.js (gitignored; copy config.example.js and fill in keys)
+  const API_KEY = self.CONFIG?.ANTHROPIC_API_KEY;
 
   if (!API_KEY) {
     throw new Error(
