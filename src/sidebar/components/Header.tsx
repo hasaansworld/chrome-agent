@@ -1,15 +1,16 @@
-import { MODELS } from "../../shared/models";
+import { getModelLabel, type ProviderId } from "../../shared/models";
 import { SettingsIcon, ArrowLeftIcon } from "./Icon";
 
 interface Props {
   view: "chat" | "settings";
+  provider: ProviderId;
   model: string;
   onOpenSettings: () => void;
   onBack: () => void;
 }
 
-export function Header({ view, model, onOpenSettings, onBack }: Props) {
-  const modelLabel = MODELS.find((m) => m.id === model)?.label ?? model;
+export function Header({ view, provider, model, onOpenSettings, onBack }: Props) {
+  const modelLabel = getModelLabel(provider, model);
 
   return (
     <header className="flex items-center justify-between border-b border-border bg-bg px-3 py-2.5 h-[52px] shrink-0">

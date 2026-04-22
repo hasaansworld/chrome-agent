@@ -1,6 +1,7 @@
 import { tool } from "ai";
 import { z } from "zod";
 import { sendToActiveTab, captureVisibleTab, getActiveTab } from "./tabs";
+import { insertTextViaDebugger, pressKeyViaDebugger } from "./debugger";
 import type { InteractiveElement, PageContent } from "../shared/protocol";
 
 // Rough size label used to hint the agent about the viewport size.
@@ -187,19 +188,62 @@ export function createTools(options: CreateToolsOptions = {}) {
     }),
 
     fillInput: tool({
-      description: "Fill an input or textarea (or contenteditable) with text. Focuses first, then types.",
+      description:
+        "Insert text into an input, textarea, or editor. On <input>/<textarea> this uses the native value setter (works with React etc.). On contenteditable it tries execCommand, synthetic paste, beforeinput, and textContent until one succeeds. For canvas-based editors (Google Docs, Figma, Monaco/VSCode web), use method='debugger' — this uses Chrome DevTools Protocol to dispatch real, trusted input events. The debugger path requires that the target already has focus (click it first). Returns which method succeeded.",
       inputSchema: z.object({
-        selector: z.string(),
+        selector: z
+          .string()
+          .optional()
+          .describe(
+            "CSS selector of the target element. Optional when method='debugger' (since CDP inserts at current focus — click the editor first)."
+          ),
         text: z.string(),
+        method: z
+          .enum(["auto", "paste", "exec-command", "native", "debugger"])
+          .optional()
+          .describe(
+            "Insertion strategy. Default 'auto' tries DOM strategies in order. 'debugger' uses Chrome DevTools Protocol Input.insertText — this is the reliable path for CANVAS editors like Google Docs/Figma because it sends trusted OS-level input events. Others: 'paste' synthetic ClipboardEvent, 'exec-command' document.execCommand, 'native' the native value setter."
+          ),
       }),
-      execute: async ({ selector, text }) => {
-        return await sendToActiveTab({ type: "fill", selector, text });
+      execute: async ({ selector, text, method }) => {
+        if (method === "debugger") {
+          const tab = await getActiveTab();
+          if (tab.id == null) {
+            return { ok: false, error: "No active tab." };
+          }
+          // If a selector was provided, focus it first so CDP inserts at
+          // the right place. Without a selector, assume the user already
+          // clicked the target.
+          if (selector) {
+            try {
+              await sendToActiveTab({ type: "click", selector });
+            } catch {
+              /* non-fatal — continue with whatever is currently focused */
+            }
+          }
+          try {
+            await insertTextViaDebugger(tab.id, text);
+            return { ok: true, method: "debugger" };
+          } catch (err) {
+            return {
+              ok: false,
+              error: `CDP insertText failed: ${String(err)}`,
+            };
+          }
+        }
+        if (!selector) {
+          return {
+            ok: false,
+            error: "selector is required unless method='debugger'.",
+          };
+        }
+        return await sendToActiveTab({ type: "fill", selector, text, method });
       },
     }),
 
     pressKey: tool({
       description:
-        "Dispatch a keyboard event AND simulate its default action: Enter submits a form (on text inputs) or clicks a button/link; Space toggles checkboxes/buttons or inserts a space in inputs; single-char keys insert text into the focused input; Backspace/Delete edit input values; other keys (Escape, arrow keys, Tab) fire the event for page listeners to handle. If the element is not focused yet, it will be focused first.",
+        "Dispatch a keyboard event AND simulate its default action: Enter submits a form (on text inputs) or clicks a button/link; Space toggles checkboxes/buttons or inserts a space in inputs; single-char keys insert text into the focused input; Backspace/Delete edit input values; other keys (Escape, arrow keys, Tab) fire the event for page listeners to handle. If the element is not focused yet, it will be focused first. Use method='debugger' for canvas editors (Google Docs/Figma/Monaco) that ignore synthetic events.",
       inputSchema: z.object({
         key: z
           .string()
@@ -209,9 +253,50 @@ export function createTools(options: CreateToolsOptions = {}) {
         selector: z
           .string()
           .optional()
-          .describe("CSS selector of the element. If omitted, dispatches to document.activeElement."),
+          .describe(
+            "CSS selector of the element. Ignored when method='debugger'. If omitted (DOM path), dispatches to document.activeElement."
+          ),
+        method: z
+          .enum(["auto", "debugger"])
+          .optional()
+          .describe(
+            "Dispatch strategy. Default 'auto' uses synthetic DOM events (fast, no debugger banner). 'debugger' uses Chrome DevTools Protocol to send a REAL key event — required for canvas editors (Google Docs/Figma)."
+          ),
+        modifiers: z
+          .object({
+            ctrl: z.boolean().optional(),
+            alt: z.boolean().optional(),
+            shift: z.boolean().optional(),
+            meta: z.boolean().optional(),
+          })
+          .optional()
+          .describe(
+            "Modifier keys to hold (only applied with method='debugger'). Useful for shortcuts like Ctrl+A."
+          ),
       }),
-      execute: async ({ key, selector }) => {
+      execute: async ({ key, selector, method, modifiers }) => {
+        if (method === "debugger") {
+          const tab = await getActiveTab();
+          if (tab.id == null) return { ok: false, error: "No active tab." };
+          if (selector) {
+            try {
+              await sendToActiveTab({ type: "click", selector });
+            } catch {
+              /* non-fatal */
+            }
+          }
+          const mask =
+            (modifiers?.alt ? 1 : 0) |
+            (modifiers?.ctrl ? 2 : 0) |
+            (modifiers?.meta ? 4 : 0) |
+            (modifiers?.shift ? 8 : 0);
+          try {
+            await pressKeyViaDebugger(tab.id, key, { modifiers: mask });
+            return { ok: true, method: "debugger" };
+          } catch (err) {
+            return { ok: false, error: `CDP key dispatch failed: ${String(err)}` };
+          }
+        }
         return await sendToActiveTab({ type: "pressKey", key, selector });
       },
     }),

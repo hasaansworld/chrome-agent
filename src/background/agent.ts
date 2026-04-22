@@ -1,8 +1,21 @@
-import { streamText, stepCountIs, type ModelMessage } from "ai";
+import {
+  streamText,
+  stepCountIs,
+  type LanguageModel,
+  type ModelMessage,
+} from "ai";
 import { createAnthropic } from "@ai-sdk/anthropic";
+import { createOpenAI } from "@ai-sdk/openai";
 import { createTools, getPendingScreenshots, type PendingScreenshot } from "./tools";
-import { getApiKey, getSelectedModel } from "./settings";
+import {
+  getApiKey,
+  getMaxSteps,
+  getSelectedModel,
+  getSelectedProvider,
+} from "./settings";
+import { broadcastToAllTabs } from "./tabs";
 import type { AgentEvent } from "../shared/protocol";
+import type { ProviderId } from "../shared/models";
 
 function buildSystemPrompt(vision: boolean): string {
   const visionRecon = vision
@@ -32,6 +45,7 @@ ${visionRecon}
 Acting:
 - Use CSS selectors returned by getPageContent/searchHTML — don't invent selectors.
 - If a click or fill fails, try a different selector or a different search rather than repeating the same call.
+- **Canvas-based editors** (Google Docs, Figma, Monaco/VSCode web): synthetic DOM events are ignored by these apps. ALWAYS use fillInput with method='debugger' (and pressKey with method='debugger' for Enter/Tab/arrows). The workflow: clickElement on the editor canvas to place the cursor, then fillInput({ method: 'debugger', text: '...' }). The debugger path dispatches real, trusted input events via Chrome DevTools Protocol. A yellow "controlled by automated software" banner may appear briefly — that's expected.
 - runJavaScript is for data extraction or complex DOM reads. Don't use it for clicks or scrolling.
 
 Finishing a task:
@@ -39,6 +53,30 @@ ${finishingRules}
 
 Replies:
 - Narrate briefly (one short sentence) before tool calls. Summarize concisely when done.`;
+}
+
+function createModel(provider: ProviderId, apiKey: string, modelId: string): LanguageModel {
+  switch (provider) {
+    case "openai": {
+      const openai = createOpenAI({ apiKey });
+      // Force the Chat Completions API (.chat) instead of the default
+      // Responses API. Chat Completions is the well-trodden path for
+      // streaming tool calls and works identically from a browser
+      // context. The Responses API streams tool calls in a different
+      // shape that some AI SDK versions don't fully normalize yet.
+      return openai.chat(modelId);
+    }
+    case "anthropic":
+    default: {
+      const anthropic = createAnthropic({
+        apiKey,
+        headers: {
+          "anthropic-dangerous-direct-browser-access": "true",
+        },
+      });
+      return anthropic(modelId);
+    }
+  }
 }
 
 export interface ConversationState {
@@ -49,12 +87,6 @@ export function createConversation(): ConversationState {
   return { messages: [] };
 }
 
-/**
- * Walk a message list and, wherever a tool-result matches a pending screenshot
- * toolCallId, insert a user-role image message immediately after. Idempotent
- * when called with disjoint `pending` entries — callers typically clear the
- * map after persisting so entries aren't re-injected across turns.
- */
 function injectScreenshots(
   messages: ModelMessage[],
   pending: Map<string, PendingScreenshot>
@@ -102,41 +134,39 @@ export async function runAgent(
   abortSignal: AbortSignal,
   options: RunAgentOptions
 ): Promise<void> {
-  const apiKey = await getApiKey();
+  const provider = await getSelectedProvider();
+  const apiKey = await getApiKey(provider);
   if (!apiKey) {
     emit({
       type: "error",
-      message: "No Anthropic API key configured. Open settings and paste your key.",
+      message: `No ${provider} API key configured. Open settings and paste your key.`,
     });
     return;
   }
 
   const modelId = await getSelectedModel();
+  const maxSteps = await getMaxSteps();
   const pending = getPendingScreenshots();
-
-  const anthropic = createAnthropic({
-    apiKey,
-    headers: {
-      "anthropic-dangerous-direct-browser-access": "true",
-    },
-  });
+  const model = createModel(provider, apiKey, modelId);
 
   state.messages.push({ role: "user", content: userContent });
 
   const messageId = crypto.randomUUID();
   emit({ type: "message-start", id: messageId, role: "assistant" });
 
+  // Visual signal on every tab that the agent is working. Broadcasted
+  // rather than targeted at a single tab so the glow follows whichever
+  // tab the agent switches to mid-run.
+  void broadcastToAllTabs({ type: "setGlow", enabled: true });
+
   try {
     const result = streamText({
-      model: anthropic(modelId),
+      model,
       system: buildSystemPrompt(options.vision),
       messages: state.messages,
       tools: createTools({ vision: options.vision }),
-      stopWhen: stepCountIs(20),
+      stopWhen: stepCountIs(maxSteps),
       abortSignal,
-      // Before each inner step, re-walk the SDK's accumulated messages and
-      // insert any pending screenshots as user-role image parts right after
-      // their tool_result. This is the reliable path for images on Anthropic.
       prepareStep: async ({ messages }) => ({
         messages: injectScreenshots(messages, pending),
       }),
@@ -171,7 +201,8 @@ export async function runAgent(
           });
           break;
         case "error":
-          emit({ type: "error", message: String(part.error ?? "unknown error") });
+          console.error("[agent] stream error:", part.error);
+          emit({ type: "error", message: describeError(part.error) });
           break;
         case "finish":
           emit({ type: "finish", reason: part.finishReason ?? "stop" });
@@ -181,8 +212,6 @@ export async function runAgent(
       }
     }
 
-    // Persist this turn's messages. Inject screenshots into the response
-    // messages too so future turns keep the image in scrollback.
     const response = await result.response;
     if (response?.messages) {
       const persisted = injectScreenshots(
@@ -191,8 +220,6 @@ export async function runAgent(
       );
       state.messages.push(...persisted);
     }
-    // Keep the pending map tidy — entries we persisted no longer need to be
-    // re-injected by prepareStep on subsequent turns.
     pending.clear();
 
     emit({ type: "message-end", id: messageId });
@@ -200,7 +227,58 @@ export async function runAgent(
     if ((err as Error).name === "AbortError") {
       emit({ type: "finish", reason: "abort" });
     } else {
-      emit({ type: "error", message: (err as Error).message ?? String(err) });
+      console.error("[agent] thrown error:", err);
+      emit({ type: "error", message: describeError(err) });
     }
+  } finally {
+    void broadcastToAllTabs({ type: "setGlow", enabled: false });
   }
+}
+
+/**
+ * Turn AI SDK / provider errors into a single descriptive string that
+ * includes HTTP status + the API response body (so "invalid model",
+ * "invalid API key", "insufficient_quota", etc. surface in the UI).
+ */
+function describeError(err: unknown): string {
+  if (err == null) return "Unknown error.";
+  if (typeof err === "string") return err;
+
+  const e = err as Record<string, unknown> & { message?: string; cause?: unknown };
+  const parts: string[] = [];
+
+  if (typeof e.message === "string") parts.push(e.message);
+
+  const status = e.statusCode ?? e.status;
+  if (typeof status === "number") parts.push(`HTTP ${status}`);
+
+  const url = e.url;
+  if (typeof url === "string") parts.push(url);
+
+  const responseBody =
+    typeof e.responseBody === "string"
+      ? e.responseBody
+      : e.data != null
+      ? safeStringify(e.data)
+      : undefined;
+  if (responseBody) parts.push(`body: ${truncate(responseBody, 1500)}`);
+
+  if (e.cause && e.cause !== err) {
+    const nested = describeError(e.cause);
+    if (nested && !parts.includes(nested)) parts.push(`cause: ${nested}`);
+  }
+
+  return parts.length > 0 ? parts.join(" — ") : safeStringify(err);
+}
+
+function safeStringify(v: unknown): string {
+  try {
+    return typeof v === "string" ? v : JSON.stringify(v);
+  } catch {
+    return String(v);
+  }
+}
+
+function truncate(s: string, n: number): string {
+  return s.length > n ? s.slice(0, n) + `… (+${s.length - n} chars)` : s;
 }

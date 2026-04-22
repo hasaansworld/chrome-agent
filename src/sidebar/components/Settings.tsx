@@ -1,33 +1,72 @@
-import { useEffect, useState } from "react";
-import { MODELS, PROVIDERS } from "../../shared/models";
-import { loadSettings, saveApiKey, saveModel, saveProvider } from "../lib/settings";
+import { useEffect, useMemo, useState } from "react";
+import {
+  DEFAULT_MAX_STEPS,
+  MAX_MAX_STEPS,
+  MIN_MAX_STEPS,
+  PROVIDERS,
+  getDefaultModelFor,
+  getModelsFor,
+  type ProviderId,
+} from "../../shared/models";
+import {
+  loadSettings,
+  saveApiKey,
+  saveMaxSteps,
+  saveModel,
+  saveProvider,
+} from "../lib/settings";
 import { CheckIcon, EyeIcon, EyeOffIcon } from "./Icon";
 
+const PROVIDER_LABEL: Record<ProviderId, string> = {
+  anthropic: "Anthropic",
+  openai: "OpenAI",
+  google: "Google",
+  groq: "Groq",
+};
+
+const PROVIDER_KEY_LINK: Record<ProviderId, string> = {
+  anthropic: "https://console.anthropic.com/settings/keys",
+  openai: "https://platform.openai.com/api-keys",
+  google: "https://aistudio.google.com/apikey",
+  groq: "https://console.groq.com/keys",
+};
+
 export function Settings() {
-  const [apiKey, setApiKey] = useState("");
-  const [savedKey, setSavedKey] = useState("");
-  const [model, setModel] = useState(MODELS[0].id);
-  const [provider, setProvider] = useState(PROVIDERS[0].id);
+  const [provider, setProvider] = useState<ProviderId>("anthropic");
+  const [model, setModel] = useState("");
+  const [maxSteps, setMaxStepsLocal] = useState(DEFAULT_MAX_STEPS);
+  const [apiKeys, setApiKeys] = useState<Partial<Record<ProviderId, string>>>({});
+  const [keyDraft, setKeyDraft] = useState("");
   const [showKey, setShowKey] = useState(false);
   const [justSaved, setJustSaved] = useState(false);
 
   useEffect(() => {
     loadSettings().then((s) => {
-      setApiKey(s.apiKey);
-      setSavedKey(s.apiKey);
-      setModel(s.model);
       setProvider(s.provider);
+      setModel(s.model);
+      setMaxStepsLocal(s.maxSteps);
+      setApiKeys(s.apiKeys);
+      setKeyDraft(s.apiKeys[s.provider] ?? "");
     });
   }, []);
 
-  const dirty = apiKey !== savedKey;
+  const models = useMemo(() => getModelsFor(provider), [provider]);
+  const savedKey = apiKeys[provider] ?? "";
   const hasKey = savedKey.length > 0;
+  const dirty = keyDraft !== savedKey;
 
-  const onSaveKey = async () => {
-    await saveApiKey(apiKey);
-    setSavedKey(apiKey);
-    setJustSaved(true);
-    setTimeout(() => setJustSaved(false), 1500);
+  const onChangeProvider = async (next: ProviderId) => {
+    setProvider(next);
+    await saveProvider(next);
+    // If the saved model isn't in the new provider's list, reset to its default.
+    const allowed = getModelsFor(next).map((m) => m.id);
+    if (!allowed.includes(model)) {
+      const fallback = getDefaultModelFor(next);
+      setModel(fallback);
+      await saveModel(fallback);
+    }
+    setKeyDraft(apiKeys[next] ?? "");
+    setShowKey(false);
   };
 
   const onChangeModel = async (id: string) => {
@@ -35,9 +74,20 @@ export function Settings() {
     await saveModel(id);
   };
 
-  const onChangeProvider = async (id: string) => {
-    setProvider(id);
-    await saveProvider(id);
+  const onSaveKey = async () => {
+    await saveApiKey(provider, keyDraft);
+    setApiKeys((prev) => ({ ...prev, [provider]: keyDraft.trim() }));
+    setJustSaved(true);
+    setTimeout(() => setJustSaved(false), 1500);
+  };
+
+  const onChangeMaxSteps = async (raw: string) => {
+    const n = parseInt(raw, 10);
+    const v = Number.isFinite(n)
+      ? Math.min(MAX_MAX_STEPS, Math.max(MIN_MAX_STEPS, n))
+      : DEFAULT_MAX_STEPS;
+    setMaxStepsLocal(v);
+    await saveMaxSteps(v);
   };
 
   return (
@@ -49,9 +99,7 @@ export function Settings() {
           <select
             className="field-select"
             value={provider}
-            onChange={(e) => onChangeProvider(e.target.value)}
-            disabled
-            title="Other providers coming soon"
+            onChange={(e) => onChangeProvider(e.target.value as ProviderId)}
           >
             {PROVIDERS.map((p) => (
               <option key={p.id} value={p.id} disabled={p.disabled}>
@@ -60,9 +108,6 @@ export function Settings() {
               </option>
             ))}
           </select>
-          <p className="mt-1.5 text-xxs text-text-muted">
-            Only Anthropic is supported right now.
-          </p>
         </div>
 
         {/* Model */}
@@ -72,25 +117,32 @@ export function Settings() {
             className="field-select"
             value={model}
             onChange={(e) => onChangeModel(e.target.value)}
+            disabled={models.length === 0}
           >
-            {MODELS.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.label}
-              </option>
-            ))}
+            {models.length === 0 ? (
+              <option>No models available</option>
+            ) : (
+              models.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.label}
+                </option>
+              ))
+            )}
           </select>
         </div>
 
-        {/* API key */}
+        {/* API key (scoped to current provider) */}
         <div>
-          <label className="field-label">Anthropic API Key</label>
+          <label className="field-label">
+            {PROVIDER_LABEL[provider]} API Key
+          </label>
           <div className="relative">
             <input
               className="field-input pr-20 font-mono"
               type={showKey ? "text" : "password"}
-              placeholder="sk-ant-…"
-              value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
+              placeholder={provider === "openai" ? "sk-..." : "sk-ant-..."}
+              value={keyDraft}
+              onChange={(e) => setKeyDraft(e.target.value)}
               autoComplete="off"
               spellCheck={false}
             />
@@ -122,7 +174,7 @@ export function Settings() {
             <button
               className="btn-primary"
               onClick={onSaveKey}
-              disabled={!dirty || !apiKey.trim()}
+              disabled={!dirty || !keyDraft.trim()}
             >
               {justSaved ? (
                 <>
@@ -137,14 +189,31 @@ export function Settings() {
           <p className="mt-3 text-xxs text-text-muted">
             Get an API key at{" "}
             <a
-              href="https://console.anthropic.com/settings/keys"
+              href={PROVIDER_KEY_LINK[provider]}
               target="_blank"
               rel="noreferrer"
               className="text-accent hover:underline"
             >
-              console.anthropic.com
+              {new URL(PROVIDER_KEY_LINK[provider]).host}
             </a>
             . It is stored locally in this browser only.
+          </p>
+        </div>
+
+        {/* Max steps */}
+        <div>
+          <label className="field-label">Max steps per run</label>
+          <input
+            className="field-input"
+            type="number"
+            min={MIN_MAX_STEPS}
+            max={MAX_MAX_STEPS}
+            value={maxSteps}
+            onChange={(e) => onChangeMaxSteps(e.target.value)}
+          />
+          <p className="mt-1.5 text-xxs text-text-muted">
+            How many tool-calling rounds the agent may take before it stops.
+            Default {DEFAULT_MAX_STEPS}. Range {MIN_MAX_STEPS}–{MAX_MAX_STEPS}.
           </p>
         </div>
       </div>

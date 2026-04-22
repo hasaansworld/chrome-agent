@@ -14,9 +14,15 @@ export type ContentRequest =
       wholeWord?: boolean;
     }
   | { type: "click"; selector: string }
-  | { type: "fill"; selector: string; text: string }
+  | {
+      type: "fill";
+      selector: string;
+      text: string;
+      method?: "auto" | "paste" | "exec-command" | "native";
+    }
   | { type: "pressKey"; selector?: string; key: string }
-  | { type: "scroll"; direction: "up" | "down" | "left" | "right"; amount: number };
+  | { type: "scroll"; direction: "up" | "down" | "left" | "right"; amount: number }
+  | { type: "setGlow"; enabled: boolean };
 
 export interface InteractiveElement {
   idx: number;

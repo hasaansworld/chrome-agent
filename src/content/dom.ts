@@ -486,22 +486,141 @@ export function dispatchClick(el: HTMLElement): void {
   el.dispatchEvent(new MouseEvent("click", init));
 }
 
-export function setInputValue(el: HTMLElement, text: string): void {
-  if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
-    const nativeSetter = Object.getOwnPropertyDescriptor(
-      el instanceof HTMLInputElement ? HTMLInputElement.prototype : HTMLTextAreaElement.prototype,
-      "value"
-    )?.set;
-    if (nativeSetter) nativeSetter.call(el, text);
+export type FillMethod =
+  | "native-setter"
+  | "exec-command"
+  | "paste-event"
+  | "beforeinput"
+  | "textcontent"
+  | "none";
+
+export interface FillOptions {
+  /**
+   * "auto" (default): try native setter, then execCommand, then paste, then beforeinput.
+   * "paste": force a synthetic ClipboardEvent — best for canvas editors
+   *   (Google Docs, Figma, Notion on some paths) that ignore keystrokes
+   *   and listen for paste handlers.
+   * "exec-command": force document.execCommand("insertText") — works in
+   *   most contenteditable surfaces including Google Docs.
+   * "native": force the native value setter (for real <input>/<textarea>).
+   */
+  method?: "auto" | "paste" | "exec-command" | "native";
+}
+
+function dispatchPasteEvent(el: HTMLElement, text: string): boolean {
+  try {
+    const dt = new DataTransfer();
+    dt.setData("text/plain", text);
+    const evt = new ClipboardEvent("paste", {
+      clipboardData: dt,
+      bubbles: true,
+      cancelable: true,
+    });
+    // dispatchEvent returns false if a listener called preventDefault —
+    // for paste that actually means "app took over and handled it", which
+    // is the success case for Google Docs / Figma / Monaco etc.
+    const notCancelled = el.dispatchEvent(evt);
+    return !notCancelled;
+  } catch {
+    return false;
+  }
+}
+
+function dispatchBeforeInput(el: HTMLElement, text: string): boolean {
+  try {
+    const evt = new InputEvent("beforeinput", {
+      inputType: "insertText",
+      data: text,
+      bubbles: true,
+      cancelable: true,
+      composed: true,
+    });
+    return !el.dispatchEvent(evt); // preventDefault === app consumed
+  } catch {
+    return false;
+  }
+}
+
+export function setInputValue(
+  el: HTMLElement,
+  text: string,
+  options: FillOptions = {}
+): { method: FillMethod } {
+  const method = options.method ?? "auto";
+
+  // Real input/textarea — native value setter is the right path. React's
+  // internal value tracker requires the prototype setter to actually
+  // register the change.
+  if (
+    (method === "auto" || method === "native") &&
+    (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement)
+  ) {
+    const proto =
+      el instanceof HTMLInputElement
+        ? HTMLInputElement.prototype
+        : HTMLTextAreaElement.prototype;
+    const setter = Object.getOwnPropertyDescriptor(proto, "value")?.set;
+    if (setter) setter.call(el, text);
     else el.value = text;
     el.dispatchEvent(new Event("input", { bubbles: true }));
     el.dispatchEvent(new Event("change", { bubbles: true }));
-    return;
+    return { method: "native-setter" };
   }
-  if (el.getAttribute("contenteditable") === "true") {
-    el.textContent = text;
-    el.dispatchEvent(new InputEvent("input", { bubbles: true }));
+
+  // Ensure the target is focused before we try insertion strategies that
+  // depend on the current selection (Google Docs etc.).
+  try {
+    el.focus();
+  } catch {
+    /* ignore */
   }
+
+  if (method === "exec-command") {
+    if (document.execCommand("insertText", false, text)) {
+      return { method: "exec-command" };
+    }
+  }
+
+  if (method === "paste") {
+    if (dispatchPasteEvent(el, text)) return { method: "paste-event" };
+    return { method: "none" };
+  }
+
+  if (method === "auto") {
+    // 1) execCommand — works for Google Docs, most contenteditable editors,
+    //    and CodeMirror legacy mode. Returns true if the browser performed
+    //    the insertion (or the surface reported success).
+    try {
+      if (document.execCommand("insertText", false, text)) {
+        return { method: "exec-command" };
+      }
+    } catch {
+      /* ignore */
+    }
+
+    // 2) Synthetic paste — many canvas-based editors (Figma, Monaco
+    //    clipboard path, some Notion inputs) listen for `paste` events
+    //    with clipboardData and handle them manually.
+    if (dispatchPasteEvent(el, text)) {
+      return { method: "paste-event" };
+    }
+
+    // 3) beforeinput — some contenteditable editors accept this directly.
+    if (dispatchBeforeInput(el, text)) {
+      return { method: "beforeinput" };
+    }
+
+    // 4) Last resort: mutate textContent on a contenteditable and fire input.
+    if (el.getAttribute("contenteditable") === "true") {
+      el.textContent = text;
+      el.dispatchEvent(
+        new InputEvent("input", { bubbles: true, inputType: "insertText", data: text })
+      );
+      return { method: "textcontent" };
+    }
+  }
+
+  return { method: "none" };
 }
 
 // Keycodes for non-character keys. Character keys fall back to their charCode.

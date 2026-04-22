@@ -7,6 +7,7 @@ import { connectAgent } from "./lib/port";
 import type { ChatMessage, ToolInvocation } from "./lib/types";
 import { loadSettings, saveVision, watchSettings } from "./lib/settings";
 import type { AgentEvent } from "../shared/protocol";
+import { DEFAULT_PROVIDER, type ProviderId } from "../shared/models";
 
 type View = "chat" | "settings";
 
@@ -16,22 +17,29 @@ export default function App() {
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [apiKey, setApiKey] = useState("");
+  const [provider, setProvider] = useState<ProviderId>(DEFAULT_PROVIDER);
+  const [apiKeys, setApiKeys] = useState<Partial<Record<ProviderId, string>>>({});
   const [model, setModel] = useState("");
   const [vision, setVision] = useState(true);
   const agentRef = useRef<ReturnType<typeof connectAgent> | null>(null);
 
+  const apiKey = apiKeys[provider] ?? "";
+
   // Load settings initially + listen for changes.
   useEffect(() => {
     loadSettings().then((s) => {
-      setApiKey(s.apiKey);
+      setProvider(s.provider);
+      setApiKeys(s.apiKeys);
       setModel(s.model);
       setVision(s.vision);
     });
     return watchSettings((patch) => {
-      if (patch.apiKey !== undefined) setApiKey(patch.apiKey);
+      if (patch.provider !== undefined) setProvider(patch.provider);
       if (patch.model !== undefined) setModel(patch.model);
       if (patch.vision !== undefined) setVision(patch.vision);
+      if (patch.apiKeys) {
+        setApiKeys((prev) => ({ ...prev, ...patch.apiKeys }));
+      }
     });
   }, []);
 
@@ -168,6 +176,7 @@ export default function App() {
     <div className="flex h-full w-full flex-col bg-bg">
       <Header
         view={view}
+        provider={provider}
         model={model}
         onOpenSettings={openSettings}
         onBack={backToChat}
