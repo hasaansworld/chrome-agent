@@ -2,7 +2,7 @@
 
 A Chrome extension that gives an LLM tools to operate your browser. Works with **OpenAI** and **Anthropic**; opens as a side panel next to any tab.
 
-[![Demo Video](https://youtu.be/Gx77TAwx_24)](https://youtu.be/Gx77TAwx_24)
+[![Demo Video](https://img.youtube.com/vi/Gx77TAwx_24/maxresdefault.jpg)](https://youtu.be/Gx77TAwx_24)
 
 The agent can:
 
